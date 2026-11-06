@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.env
+.env.*
+.DS_Store
+# autoresearch
+autoresearch/.ledger/
+autoresearch/tasks/*/artifacts/
+autoresearch/tasks/*/run.log
+# robolab training runs
+runs/

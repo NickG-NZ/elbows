@@ -1,0 +1,35 @@
+{
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "900000",
+    "BASH_MAX_TIMEOUT_MS": "3600000"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv run ar:*)",
+      "Bash(uv sync:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git fetch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout -b ar/:*)",
+      "Bash(git push -u origin HEAD:*)",
+      "Bash(tail:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/infra/cloud/session_start.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}

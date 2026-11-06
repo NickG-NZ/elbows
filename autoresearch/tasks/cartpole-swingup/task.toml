@@ -1,0 +1,28 @@
+[task]
+description = "Cart-pole swing-up + balance under physics randomisation (CPU toy; validates the loop)"
+editable = ["train.py"]
+frozen = ["sim.py", "eval.py"]
+
+[run]
+train = "python train.py"
+eval = "python eval.py"
+
+[metric]
+name = "val_return"     # max 500
+goal = "max"
+min_improvement = 2.0   # ~2x the seed-to-seed noise of the baseline; smaller "wins" are discarded
+
+# Inner loop: short and cheap. Agents iterate on this.
+[profiles.proxy]
+budget_s = 60
+timeout_s = 180
+seeds = 1
+
+# Promotion: longer budget, several seeds. Run on a lane's best before proposing a merge.
+[profiles.promote]
+budget_s = 180
+timeout_s = 400
+seeds = 3
+
+[compute]
+backend = "local"       # CPU-only task; GPU tasks set backend = "modal" and gpu = "H100"

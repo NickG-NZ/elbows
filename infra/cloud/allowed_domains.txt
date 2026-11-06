@@ -1,0 +1,11 @@
+# Claude Code cloud environment -> Network access: Custom, and tick
+# "Also include default list of common package managers". Then add:
+*.doppler.com
+modal.com
+*.modal.com
+*.modal.run
+download.pytorch.org
+# Optional, as you start using them:
+# huggingface.co
+# *.hf.co
+# api.wandb.ai
