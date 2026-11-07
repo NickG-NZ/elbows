@@ -3,6 +3,10 @@
 Robotics monorepo for end-to-end control policies and neural simulators, set up for many coding and
 research agents working in parallel.
 
+
+<img width="1774" height="887" alt="Robots Exploring a Misty Mountain Wilderness" src="https://github.com/user-attachments/assets/4973c0fd-37ca-400a-bc00-12c338aa83b2" />
+
+
 | path | what |
 |---|---|
 | [`elbows_sim/`](elbows_sim/README.md) | simulator-agnostic environments and tasks (MuJoCo now, Isaac Lab later) |
