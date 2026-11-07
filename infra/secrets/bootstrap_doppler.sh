@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One-time Doppler setup for elbows. Run by a human from a machine logged in with `doppler login`.
-# Creates project `elbows` with a branch config `dev_agents` holding ONLY what agents need, then
-# mints a read-only service token scoped to that config. That token is the single value you paste
-# into each Claude Code cloud environment as DOPPLER_TOKEN.
+# Creates project `elbows` with a branch config `dev_agents`, which inherits the shared infra
+# credentials in root `dev` plus agent-only settings, then mints a read-only service token for it.
+# That token is the single value you paste into each Claude Code cloud environment as DOPPLER_TOKEN.
 set -euo pipefail
 PROJECT=elbows
 CONFIG=dev_agents
@@ -11,10 +11,10 @@ doppler projects get "$PROJECT" >/dev/null 2>&1 || doppler projects create "$PRO
 doppler configs get "$CONFIG" -p "$PROJECT" >/dev/null 2>&1 || doppler configs create "$CONFIG" -p "$PROJECT" -e dev
 
 cat <<MSG
-Now add the agent secrets (only these; never the held-out salt):
-  doppler secrets set -p $PROJECT -c $CONFIG MODAL_TOKEN_ID=... MODAL_TOKEN_SECRET=...
-  doppler secrets set -p $PROJECT -c $CONFIG AR_LEDGER=modal AR_BACKEND=modal
-  # optional: HF_TOKEN, WANDB_API_KEY
+Shared infra credentials go in the root \`dev\` config; $CONFIG inherits them (never the held-out salt):
+  doppler secrets set -p $PROJECT -c dev MODAL_TOKEN_ID MODAL_TOKEN_SECRET   # prompts; later HF_TOKEN, WANDB_API_KEY
+Agent-only settings go in $CONFIG:
+  doppler secrets set -p $PROJECT -c $CONFIG AR_LEDGER=modal
 MSG
 read -rp "Create the service token now? [y/N] " yn
 if [[ "$yn" == [yY] ]]; then

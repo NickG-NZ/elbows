@@ -5,7 +5,7 @@ Robotics monorepo, set up for many coding and research agents working in paralle
 | path | what |
 |---|---|
 | [`autoresearch/`](autoresearch/README.md) | parallel autonomous research loops (after karpathy/autoresearch) |
-| [`docs/agents.md`](docs/agents.md) | runbook: Claude Code cloud + Doppler + Modal |
+| [`docs/agent-infra.md`](docs/agent-infra.md) | setup guide: Claude Code cloud + Doppler + Modal |
 | `infra/` | cloud environment scripts and secrets bootstrap |
 
 ```bash

@@ -28,13 +28,33 @@ Then, in the Modal dashboard, create an API token for agents and **set a workspa
 Fifty lanes running H100s overnight costs real money.
 
 ### 3. Doppler (secrets)
+elbows lives in its own Doppler workspace, separate from any other Doppler account you use. Log in
+with a token scoped to the repo directory, so `doppler` inside `elbows/` uses that workspace and
+everywhere else keeps your default login:
+```bash
+doppler login --scope "$(git rev-parse --show-toplevel)" --yes   # sign in with the elbows account
+doppler me                                                        # inside the repo: shows the elbows workspace
+doppler setup -p elbows -c dev --no-interactive                   # local dev: `doppler run -- <cmd>`
+```
+Pass `--scope` an absolute path; a typo there makes the CLI silently fall back to the global login.
+
 ```bash
 infra/secrets/bootstrap_doppler.sh      # project `elbows`, config `dev_agents`, service token
-doppler secrets set -p elbows -c dev_agents MODAL_TOKEN_ID=... MODAL_TOKEN_SECRET=... AR_LEDGER=modal
+doppler secrets set -p elbows -c dev MODAL_TOKEN_ID MODAL_TOKEN_SECRET   # shared infra → root `dev`
+doppler secrets set -p elbows -c dev_agents AR_LEDGER=modal              # agent-only settings
 ```
-Only put things in `dev_agents` that you're comfortable with any agent reading. Agents can see
-everything in their environment, and a prompt injection could exfiltrate it. Keep prod and
-real-robot credentials in other configs.
+Configs are organised by **infrastructure, not by who uses it**:
+
+| config | holds | used by |
+|---|---|---|
+| `dev` (root) | shared dev infra credentials: Modal, later HF / W&B / storage | humans (`doppler run -- …`), manual training |
+| `dev_agents` (branch of `dev`) | inherits all of `dev`, plus agent-only settings (`AR_*`) | Claude Code cloud sessions, via the `DOPPLER_TOKEN` service token |
+| `stg` / `prd` | later: anything touching real robots or production | never agents |
+
+`dev_agents` gets a secret when it's *written* to `dev`. If you delete a secret in `dev_agents`, it
+stays deleted there until it's next written in `dev`. Because everything in `dev` flows to agents,
+and agents (or a prompt injection) can read their whole environment, keep anything agents
+shouldn't have out of `dev` (`dev_personal`, or `stg`/`prd`).
 
 ### 4. Claude Code cloud environment
 At claude.ai/code, open the environment selector → **Add environment**, name it `elbows-agents`:

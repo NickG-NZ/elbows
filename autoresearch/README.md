@@ -30,7 +30,7 @@ autoresearch/scripts/launch.sh --local cartpole-swingup "a:improve CEM" "b:try P
 
 ## Parallel in the cloud
 
-See [`docs/agents.md`](../docs/agents.md) for the one-time setup (Claude Code cloud environment,
+See [`docs/agent-infra.md`](../docs/agent-infra.md) for the one-time setup (Claude Code cloud environment,
 Doppler, Modal). After that:
 
 ```bash

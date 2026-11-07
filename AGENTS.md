@@ -8,7 +8,7 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.
 - `infra/secrets/`: one-time Doppler/Modal bootstrap (humans only).
-- `docs/agents.md`: how agents, secrets and compute fit together.
+- `docs/agent-infra.md`: setup guide for agent infrastructure (cloud sessions, secrets, compute).
 
 ## Conventions
 - Python ≥ 3.11 with uv. `uv sync`, then `uv run …`. No bare `pip install`.
