@@ -23,3 +23,5 @@ elbows-learn = { workspace = true }
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# Autoresearch task code is agent-edited and partly hash-frozen; lint the harness, not the tasks.
+extend-exclude = ["autoresearch/tasks"]

@@ -27,5 +27,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   - **Interactive sessions working directly with the user:** commit and push to `main`. Pull or
     rebase first, and never force-push.
 - Stay within the scope of your task. Other agents are editing other parts of the tree.
-- Secrets arrive as env vars from Doppler (cloud: SessionStart hook). Never print, log, or commit them.
 - GPU work goes through Modal (`autoresearch` `modal` backend), because cloud VMs have no GPU.
+
+## Secrets
+- Doppler, project `elbows`. No `.env` files. Never print, log, or commit secrets.
+- Locally: `doppler run -- <cmd>`. Cloud sessions get them via the SessionStart hook.
