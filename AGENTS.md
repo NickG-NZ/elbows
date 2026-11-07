@@ -21,8 +21,11 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
 - Use modern typing (`list[str]`, `X | None`) and keep modules small.
 
 ## Working in parallel
-- Never commit to `main` directly. Branch (`feat/…`, `fix/…`, `ar/<task>/<lane>` for research
-  lanes), push, and open a PR.
+- Git depends on how you were launched:
+  - **Autonomous parallel agents** (autoresearch lanes, batch-launched cloud sessions): never
+    commit to `main`. Branch (`ar/<task>/<lane>`, `feat/…`, `fix/…`), push, and open a PR.
+  - **Interactive sessions working directly with the user:** commit and push to `main`. Pull or
+    rebase first, and never force-push.
 - Stay within the scope of your task. Other agents are editing other parts of the tree.
 - Secrets arrive as env vars from Doppler (cloud: SessionStart hook). Never print, log, or commit them.
 - GPU work goes through Modal (`autoresearch` `modal` backend), because cloud VMs have no GPU.
