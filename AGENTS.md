@@ -4,6 +4,10 @@ Robotics monorepo. Many coding agents (Claude Code, Codex, …) work here in par
 This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AGENTS.md`.
 
 ## Layout
+- `elbows_sim/`: environments. Tasks (what to do) and simulator backends behind one `Sim` interface.
+  Only `backends/` may import a simulator; new backends must pass `tests/test_backend_contract.py`.
+- `elbows_learn/`: training. Generic methods plus `recipes/` (how to learn a given task). Depends on
+  `elbows_sim`, never the reverse (`elbows_sim/tests/test_layering.py`).
 - `autoresearch/`: parallel autonomous research loops. If you were launched as a lane, follow
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.

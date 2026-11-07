@@ -5,10 +5,12 @@ __pycache__/
 .pytest_cache/
 .env
 .env.*
+*.env
+*.env.save
 .DS_Store
 # autoresearch
 autoresearch/.ledger/
 autoresearch/tasks/*/artifacts/
 autoresearch/tasks/*/run.log
-# robolab training runs
+# training runs
 runs/

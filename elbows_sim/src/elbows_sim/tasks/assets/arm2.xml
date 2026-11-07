@@ -1,0 +1,49 @@
+<!-- Planar 2-link torque-controlled arm. Names (joints, sites, bodies, cameras) are part of the task
+     contract: any other backend's version of this scene (e.g. a USD for Isaac) must use the same ones. -->
+<mujoco model="arm2">
+  <compiler angle="degree"/>
+  <option timestep="0.005" integrator="implicitfast"/>
+
+  <visual>
+    <global offwidth="640" offheight="640"/>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.15 0.17 0.2" rgb2="0.2 0.22 0.26" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.1"/>
+    <material name="link" rgba="0.85 0.65 0.35 1"/>
+  </asset>
+
+  <default>
+    <joint type="hinge" axis="0 0 1" damping="0.02" armature="0.002"/>
+    <geom contype="0" conaffinity="0" material="link"/>
+    <motor ctrlrange="-1 1" gear="0.3"/>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1"/>
+    <geom name="floor" type="plane" size="0.6 0.6 0.05" pos="0 0 -0.04" material="grid"/>
+    <camera name="top" pos="0 0 1.2" xyaxes="1 0 0 0 1 0" fovy="45"/>
+
+    <body name="link1">
+      <joint name="shoulder"/>
+      <geom type="cylinder" size="0.03 0.02" rgba="0.3 0.3 0.35 1"/>
+      <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.018"/>
+      <body name="link2" pos="0.2 0 0">
+        <joint name="elbow" limited="true" range="-150 150"/>
+        <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.015"/>
+        <site name="tip" pos="0.2 0 0" size="0.012" rgba="0.2 0.8 0.4 1"/>
+      </body>
+    </body>
+
+    <body name="target" mocap="true" pos="0.25 0.1 0">
+      <geom type="sphere" size="0.015" rgba="0.9 0.2 0.2 1"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="shoulder" joint="shoulder"/>
+    <motor name="elbow" joint="elbow"/>
+  </actuator>
+</mujoco>

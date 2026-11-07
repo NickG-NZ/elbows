@@ -1,0 +1,21 @@
+[project]
+name = "elbows-learn"
+version = "0.1.0"
+description = "Model training: RL now; VLAs, world models and neural simulators later"
+requires-python = ">=3.11"
+# Online RL needs only these, so this stays installable into Isaac Sim's Python.
+# Put heavy deps for offline model training (transformers, lerobot, ...) in optional extras.
+dependencies = ["elbows-sim", "torch>=2.4"]
+
+[project.scripts]
+elbows-learn = "elbows_learn.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/elbows_learn"]
+
+[tool.uv.sources]
+elbows-sim = { workspace = true }

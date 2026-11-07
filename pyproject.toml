@@ -2,7 +2,7 @@
 name = "elbows"
 version = "0.0.0"
 requires-python = ">=3.11"
-dependencies = ["autoresearch[modal]"]
+dependencies = ["autoresearch[modal]", "elbows-sim[mujoco,video]", "elbows-learn"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
@@ -11,12 +11,14 @@ dev = ["pytest>=8", "ruff>=0.6"]
 package = false
 
 [tool.uv.workspace]
-members = ["autoresearch"]
+members = ["autoresearch", "elbows_sim", "elbows_learn"]
 # Each autoresearch task is its own tiny uv project with pinned deps; keep them out of the workspace.
 exclude = ["autoresearch/tasks/*"]
 
 [tool.uv.sources]
 autoresearch = { workspace = true }
+elbows-sim = { workspace = true }
+elbows-learn = { workspace = true }
 
 [tool.ruff]
 line-length = 120
