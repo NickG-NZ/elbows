@@ -23,7 +23,7 @@ aims:
   discrepancies change how a policy behaves. Use what we learn to improve the simulator, and to
   design hardware that is easier to model and control.
 - **Overcome it with learning.** Develop learning-based methods that close the gap on the simulation
-  side, and remain robust on the policy side. These include physics randomisation, system identification learned from
+  side, and remain robust on the policy side. These include system identification learned from
   data, world models and neural simulators trained on real interaction, and policies that adapt
   online.
 
