@@ -410,7 +410,7 @@ version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "autoresearch", extra = ["modal"] },
-    { name = "elbows-learn" },
+    { name = "elbows-learn", extra = ["modal"] },
     { name = "elbows-sim", extra = ["mujoco", "video"] },
 ]
 
@@ -423,7 +423,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "autoresearch", extras = ["modal"], editable = "autoresearch" },
-    { name = "elbows-learn", editable = "elbows_learn" },
+    { name = "elbows-learn", extras = ["modal"], editable = "elbows_learn" },
     { name = "elbows-sim", extras = ["mujoco", "video"], editable = "elbows_sim" },
 ]
 
@@ -442,11 +442,18 @@ dependencies = [
     { name = "torch" },
 ]
 
+[package.optional-dependencies]
+modal = [
+    { name = "modal" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "elbows-sim", editable = "elbows_sim" },
+    { name = "modal", marker = "extra == 'modal'", specifier = ">=1.0" },
     { name = "torch", specifier = ">=2.4" },
 ]
+provides-extras = ["modal"]
 
 [[package]]
 name = "elbows-sim"

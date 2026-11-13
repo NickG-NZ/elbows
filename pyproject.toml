@@ -2,7 +2,7 @@
 name = "elbows"
 version = "0.0.0"
 requires-python = ">=3.11"
-dependencies = ["autoresearch[modal]", "elbows-sim[mujoco,video]", "elbows-learn"]
+dependencies = ["autoresearch[modal]", "elbows-sim[mujoco,video]", "elbows-learn[modal]"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

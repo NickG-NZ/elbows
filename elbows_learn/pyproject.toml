@@ -7,6 +7,9 @@ requires-python = ">=3.11"
 # Put heavy deps for offline model training (transformers, lerobot, ...) in optional extras.
 dependencies = ["elbows-sim", "torch>=2.4"]
 
+[project.optional-dependencies]
+modal = ["modal>=1.0"]  # cloud GPU runs (e.g. vla/pi05_libero.py)
+
 [project.scripts]
 elbows-learn = "elbows_learn.cli:main"
 

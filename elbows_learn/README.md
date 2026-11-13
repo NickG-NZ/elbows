@@ -12,13 +12,23 @@ uv run elbows-learn eval runs/reach_ppo-mujoco-s0/policy.pt --video runs/reach.m
 uv run --group dev pytest -q elbows_learn/tests
 ```
 
+## Pretrained VLAs
+
+`vla/pi05_libero.py` runs Physical Intelligence's π0.5 (`pi05_libero`, the newest openpi release
+with public weights) on LIBERO, a Franka Panda benchmark, on Modal GPUs. It uses openpi's own policy
+server and LIBERO client, pinned to one commit, to reproduce the published 96.85% average.
+
+```bash
+doppler run -- uv run modal run elbows_learn/src/elbows_learn/vla/pi05_libero.py   # quick: 5 trials/task
+```
+
 ## What goes where
 
 | | lives in | example |
 |---|---|---|
 | **what** to do: task, reward, observations, success | `elbows_sim/tasks/` | `reach.py` |
 | **how** to learn it: method + task-specific settings | `elbows_learn/recipes/` | `reach_ppo.py` |
-| generic methods and models, task-agnostic | `elbows_learn/rl/` (later `vla/`, `world_models/`) | `ppo.py` |
+| generic methods and models, task-agnostic | `elbows_learn/rl/`, `elbows_learn/vla/` (later `world_models/`) | `ppo.py` |
 
 - A **recipe** names a task, a method and its settings (budget, network size, env count, task
   arguments). One task can have several, e.g. `reach_ppo` and `reach_ppo_smoke`.
