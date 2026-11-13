@@ -7,6 +7,7 @@ one container per task suite. openpi reports 96.85% average success (see `PUBLIS
     doppler run -- uv run modal run elbows_learn/src/elbows_learn/vla/pi05_libero.py              # quick: 5 trials/task
     doppler run -- uv run modal run elbows_learn/src/elbows_learn/vla/pi05_libero.py \
         --suites libero_spatial,libero_object,libero_goal,libero_10 --trials 50                   # full benchmark
+    ... --trials 1 --wrist --out runs/pi05_libero_wrist      # videos show both cameras
 
 Results and sample videos are written to runs/pi05_libero/.
 """
@@ -29,6 +30,10 @@ OPENPI_COMMIT = "215abfb217dbac7d5f1273282331b9b1866c0479"  # openpi main, 2026-
 GPU = "L4"  # 24 GB; inference needs >8 GB. Has graphics support for MuJoCo's EGL rendering.
 PUBLISHED = {"libero_spatial": 98.8, "libero_object": 98.2, "libero_goal": 98.0, "libero_10": 92.4}
 SERVER_PORT = 8000
+CLIENT = "examples/libero/main.py"
+# openpi's client records only the third-person camera; this one-line patch records both side by side.
+REPLAY_LINE = "replay_images.append(img)"
+REPLAY_BOTH = "replay_images.append(np.concatenate([img, wrist_img], axis=1))"
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04", add_python="3.11")
@@ -130,7 +135,16 @@ def prefetch() -> None:
 
 
 @app.function(gpu=GPU, volumes={"/cache": cache}, timeout=6 * 3600)
-def eval_suite(suite: str, trials: int, seed: int = 7, gl: str = "egl", max_videos: int = 4) -> dict:
+def eval_suite(
+    suite: str, trials: int, seed: int = 7, gl: str = "egl", max_videos: int = 4, wrist: bool = False
+) -> dict:
+    """Run openpi's LIBERO client against the server. `wrist` adds the wrist camera to the videos."""
+    script = CLIENT
+    if wrist:
+        src = Path("/openpi", CLIENT).read_text()
+        assert src.count(REPLAY_LINE) == 1, "openpi client changed; update REPLAY_LINE"
+        script = "examples/libero/main_wrist.py"
+        Path("/openpi", script).write_text(src.replace(REPLAY_LINE, REPLAY_BOTH))
     proc, server_log = _start_server()
     out_dir = Path(f"/tmp/videos/{suite}")
     env = os.environ | {
@@ -144,7 +158,7 @@ def eval_suite(suite: str, trials: int, seed: int = 7, gl: str = "egl", max_vide
         client = subprocess.Popen(
             [
                 "/libero-venv/bin/python",
-                "examples/libero/main.py",
+                script,
                 "--args.task-suite-name",
                 suite,
                 "--args.num-trials-per-task",
@@ -192,12 +206,17 @@ def eval_suite(suite: str, trials: int, seed: int = 7, gl: str = "egl", max_vide
 
 @app.local_entrypoint()
 def main(
-    suites: str = "libero_spatial", trials: int = 5, seed: int = 7, gl: str = "egl", out: str = "runs/pi05_libero"
+    suites: str = "libero_spatial",
+    trials: int = 5,
+    seed: int = 7,
+    gl: str = "egl",
+    wrist: bool = False,
+    out: str = "runs/pi05_libero",
 ) -> None:
     names = [s.strip() for s in suites.split(",") if s.strip()]
     print(f"pi05_libero on {names}, {trials} trials/task, GPU={GPU}, openpi@{OPENPI_COMMIT[:7]}")
     prefetch.remote()
-    results = list(eval_suite.starmap([(s, trials, seed, gl) for s in names]))
+    results = list(eval_suite.starmap([(s, trials, seed, gl, 4, wrist) for s in names]))
 
     root = Path(out)
     for r in results:
