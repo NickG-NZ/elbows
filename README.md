@@ -1,7 +1,7 @@
 <h1 align="center">elbows</h1>
 
 <p align="center">
-  <strong>Closing the sim-to-real gap for robot control.</strong>
+  <strong>Understanding the sim-to-real gap, and learning to overcome it.</strong>
 </p>
 
 <p align="center">
@@ -14,15 +14,18 @@
 
 ## Overview
 
-Policies trained in simulation often fail on real hardware, because the simulator's model of the
-robot and its world is wrong in ways that matter: actuator dynamics, friction, contact,
-latency, sensing. **elbows** works on that gap from both sides:
+Robot policies trained in simulation often fail on real hardware. The simulator's model of the
+robot and its world differs from reality: actuator dynamics, friction, contact, latency, sensing.
+It is rarely clear which of those differences actually matter for a given task. **elbows** has two
+aims:
 
-- **Better understanding and design of the hardware.** Identify and model what the real robot
-  actually does, feed that back into the simulator, and use it to inform the hardware design.
-- **Better control policies built on interaction with the world.** Learn from real-world experience
-  as well as simulated rollouts: world models and neural simulators trained on real data, and
-  policies trained and evaluated against them.
+- **Understand the gap.** Measure where and why simulation and reality diverge, and which
+  discrepancies change how a policy behaves. Use what we learn to improve the simulator, and to
+  design hardware that is easier to model and control.
+- **Overcome it with learning.** Develop learning-based methods that either tolerate the gap or close
+  it with real-world data. These include physics randomisation, system identification learned from
+  data, world models and neural simulators trained on real interaction, and policies that adapt
+  online.
 
 To move quickly, much of the experimentation is run by autonomous research agents. They work in
 parallel against frozen evaluations, including held-out physics randomisation that acts as a proxy
