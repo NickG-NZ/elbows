@@ -22,8 +22,8 @@ aims:
 - **Understand the gap.** Measure where and why simulation and reality diverge, and which
   discrepancies change how a policy behaves. Use what we learn to improve the simulator, and to
   design hardware that is easier to model and control.
-- **Overcome it with learning.** Develop learning-based methods that either tolerate the gap or close
-  it with real-world data. These include physics randomisation, system identification learned from
+- **Overcome it with learning.** Develop learning-based methods that close the gap on the simulation
+  side, and remain robust on the policy side. These include physics randomisation, system identification learned from
   data, world models and neural simulators trained on real interaction, and policies that adapt
   online.
 
