@@ -25,12 +25,28 @@ and saved frames to determine success.
 Tested on 2026-11-18, on an Apple Silicon Mac with LeRobot 0.7.0:
 
 - macOS identified the USB webcam as **BRIO 301** (Logitech).
-- AVFoundation enumeration mapped the BRIO to camera index **1** during this run.
+- OpenCV's AVFoundation device ordering (sorted by unique ID) mapped the BRIO to index **0**.
 - `lerobot-find-cameras opencv` opened that camera and repeatedly saved frames successfully.
-- Reported default profile: **1920 × 1080 at 15 FPS**, using **AVFOUNDATION**.
-- The final test frame is at `outputs/captured_images/opencv_1.png` (local only).
+- Reported default profile: **1920 × 1080 at 5 FPS**, using **AVFOUNDATION**.
+- The discovery test frame is at `outputs/captured_images/opencv_0.png` (local only).
+
+An earlier version of these notes incorrectly identified index 1 as the BRIO by using unsorted
+AVFoundation enumeration. Index 1 was the MacBook Air camera; its 15 FPS default and initial
+30 FPS measurements were not BRIO results.
+
+Retested the BRIO at index 0 with OpenCV 4.13.0, explicitly requesting 30 FPS:
+
+| Requested resolution | Measured frame delivery | Frames | Failed reads | Longest frame interval |
+|---|---:|---:|---:|---:|
+| 1920 × 1080 | 29.99 FPS | 300 | 0 | 66.17 ms |
+| 1280 × 720 | 30.00 FPS | 300 | 0 | 64.62 ms |
+
+Each run discarded 30 warmup frames, then read continuously for 10 seconds. Successful reads
+were timestamped with `time.monotonic()`; FPS is `(frames - 1) / (last_time - first_time)`.
+Returned frame dimensions matched the requests. This measures delivery to Python, not exposure
+timing, unique exposures, or end-to-end latency. No video was saved during the FPS tests.
 
 The initial scan encountered a macOS camera permission request; a subsequent scan succeeded.
-This verifies discovery and frame capture, not sustained frame rate or robot integration.
+This verifies discovery and short capture runs, not long-running reliability or robot integration.
 Camera indices can change after reconnecting devices or rebooting; rerun discovery before
 configuring the SO101 camera. The robot arm has not yet been configured or tested.
