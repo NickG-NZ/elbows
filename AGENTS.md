@@ -21,6 +21,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
 - Use modern typing (`list[str]`, `X | None`) and keep modules small.
 
 ## Working in parallel
+- All commits must use Nick <nickmgoodson@gmail.com> as author and committer.
+  Do not use Claude, Codex, or other agent identities, or add agent `Co-Authored-By` trailers.
 - Git depends on how you were launched:
   - **Autonomous parallel agents** (autoresearch lanes, batch-launched cloud sessions): never
     commit to `main`. Branch (`ar/<task>/<lane>`, `feat/…`, `fix/…`), push, and open a PR.
