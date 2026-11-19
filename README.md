@@ -20,12 +20,10 @@ It is rarely clear which of those differences actually matter for a given task. 
 aims:
 
 - **Understand the gap.** Measure where and why simulation and reality diverge, and which
-  discrepancies change how a policy behaves. Use what we learn to improve the simulator, and to
-  design hardware that is easier to model and control.
+  discrepancies change how a policy behaves.
 - **Overcome it with learning.** Develop learning-based methods that close the gap on the simulation
-  side, and remain robust on the policy side. These include system identification learned from
-  data, world models and neural simulators trained on real interaction, and policies that adapt
-  online.
+  side, and remain robust on the policy side. These include neural system identification fitted online from
+  limited data samples, world models and neural simulators as well as robust adaptive policies.
 
 To move quickly, much of the experimentation is run by autonomous research agents. They work in
 parallel against frozen evaluations, including held-out physics randomisation that acts as a proxy
