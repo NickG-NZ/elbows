@@ -5,6 +5,7 @@ Shared by the MuJoCo CPU and MJX backends.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import mujoco
@@ -20,7 +21,9 @@ def load_model(scene: SceneSpec) -> mujoco.MjModel:
     else:
         spec = mujoco.MjSpec.from_file(str(scene.assets["mjcf"]))
         _attach_robot(spec, scene.robot)
-        m = spec.compile()
+        with warnings.catch_warnings():  # same empty-prefix warning as in _attach_robot
+            warnings.filterwarnings("ignore", message=".*empty prefix")
+            m = spec.compile()
     m.opt.timestep = scene.physics_dt
     return m
 
@@ -39,7 +42,14 @@ def _attach_robot(spec: mujoco.MjSpec, robot: RobotSpec) -> None:
     site = spec.site(robot.mount)
     if site is None:
         raise KeyError(f"scene has no site {robot.mount!r} to mount the robot on")
-    spec.attach(urdf, prefix="", site=site)
+    # An empty prefix keeps the URDF's names, which tasks rely on. MuJoCo warns that such a model may
+    # not save back to XML (we never save it) and writes the warning to MUJOCO_LOG.TXT in the cwd.
+    previous = mujoco.get_mju_user_warning()
+    mujoco.set_mju_user_warning(lambda msg: None if "empty prefix" in msg else print(f"MuJoCo warning: {msg}"))
+    try:
+        spec.attach(urdf, prefix="", site=site)
+    finally:
+        mujoco.set_mju_user_warning(previous)
 
     joints = {j.name: j for j in spec.joints}
     for name, servo in robot.actuators.items():
