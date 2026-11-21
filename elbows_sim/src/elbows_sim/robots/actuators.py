@@ -1,14 +1,32 @@
-"""Servo models shared by every robot that uses them. Add a servo once here, then map joints to it."""
+"""The actuator library: servo files in `assets/actuators/<name>.toml`, looked up by name.
+
+Add a servo by adding a TOML file there. Robots refer to it by name or by path to any TOML file.
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..core.spec import ActuatorModel
+from ..formats.actuator import load_actuator
 
-# Feetech STS3215 (SO-100/SO-101 joints). Values from TheRobotStudio's SO-101 MJCF
-# (Simulation/SO101/joints_properties.xml), which adapts them from the Open Duck Mini project.
-# Not yet identified on our own servos.
-STS3215 = ActuatorModel(
-    name="sts3215", kp=17.8, kv=0.0, force_limit=3.35, damping=0.60, armature=0.028, frictionloss=0.052
-)
+LIBRARY = Path(__file__).parents[1] / "assets" / "actuators"
 
-ACTUATORS: dict[str, ActuatorModel] = {a.name: a for a in (STS3215,)}
+
+def actuator(ref: str | Path | ActuatorModel) -> ActuatorModel:
+    """Resolve a library name ("sts3215"), a path to a TOML file, or an ActuatorModel as-is."""
+    if isinstance(ref, ActuatorModel):
+        return ref
+    path = Path(ref).expanduser()
+    if path.suffix != ".toml":
+        path = LIBRARY / f"{ref}.toml"
+        if not path.is_file():
+            raise KeyError(f"no actuator {ref!r} in {LIBRARY}; have {sorted(available_actuators())}")
+    return load_actuator(path)
+
+
+def available_actuators() -> list[str]:
+    return sorted(p.stem for p in LIBRARY.glob("*.toml"))
+
+
+STS3215 = actuator("sts3215")

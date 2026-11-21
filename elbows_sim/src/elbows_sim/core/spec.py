@@ -18,9 +18,10 @@ class TensorSpec:
 
 @dataclass(frozen=True)
 class ActuatorModel:
-    """A joint servo, described independently of any simulator.
+    """A joint servo, described independently of any simulator. Stored as TOML in `assets/actuators/`
+    (read by `elbows_sim.formats.actuator`) and translated by each backend.
 
-    Position control: torque = kp * (target - q) - kv * qd, clipped to +-force_limit. Actions in
+    control="position": torque = kp * (target - q) - kv * qd, clipped to +-force_limit. Actions in
     [-1, 1] map linearly onto the joint's range, so an action is a target joint position. damping,
     armature and frictionloss describe the joint as driven by this servo (gearbox and motor).
     """
@@ -32,6 +33,8 @@ class ActuatorModel:
     damping: float = 0.0  # N·m·s/rad
     armature: float = 0.0  # kg·m², reflected rotor inertia
     frictionloss: float = 0.0  # N·m
+    control: str = "position"
+    source: str = ""  # where the numbers come from
 
 
 @dataclass(frozen=True)

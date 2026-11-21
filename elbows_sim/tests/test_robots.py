@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import torch
 from elbows_sim.core.spec import ActuatorModel
-from elbows_sim.formats import urdf_joints
-from elbows_sim.robots import SO101_STOCK_URDF, STS3215, so101_robot
+from elbows_sim.formats import load_actuator, urdf_joints
+from elbows_sim.robots import SO101_STOCK_URDF, STS3215, actuator, available_actuators, so101_robot
 
 import elbows_sim
 
@@ -78,10 +78,36 @@ def test_custom_urdf_joint_order_follows_the_chain(six_dof_urdf):
     ]
 
 
+def test_actuator_library():
+    assert "sts3215" in available_actuators()
+    assert STS3215.kp == 17.8 and STS3215.force_limit == 3.35 and STS3215.control == "position"
+    with pytest.raises(KeyError):
+        actuator("no_such_servo")
+
+
+def test_actuator_file_override(tmp_path):
+    f = tmp_path / "stiff.toml"
+    f.write_text('name = "stiff"\nkp = 40\nkv = 0.5\nforce_limit = 5\n')
+    r = so101_robot(actuators={"gripper": str(f)})
+    assert r.actuators["gripper"].kp == 40.0 and r.actuators["gripper"].damping == 0.0
+    assert r.actuators["shoulder_pan"] == STS3215
+
+
+@pytest.mark.parametrize(
+    "body", ['name = "x"\nkp = 1\nkv = 0\nforce_limit = 1\ngain = 2\n', 'name = "x"\nkp = 1\n',
+             'name = "x"\nkp = 1\nkv = 0\nforce_limit = 1\ncontrol = "velocity"\n']
+)  # fmt: skip
+def test_bad_actuator_files_are_rejected(tmp_path, body):
+    f = tmp_path / "bad.toml"
+    f.write_text(body)
+    with pytest.raises(ValueError):
+        load_actuator(f)
+
+
 def test_actuator_overrides():
     strong = ActuatorModel("strong", kp=50, kv=1, force_limit=10)
     r = so101_robot(actuators={"gripper": strong})
-    assert r.actuators["gripper"] is strong and r.actuators["shoulder_pan"] is STS3215
+    assert r.actuators["gripper"] is strong and r.actuators["shoulder_pan"] == STS3215
     with pytest.raises(KeyError):
         so101_robot(actuators={"not_a_joint": strong})
 

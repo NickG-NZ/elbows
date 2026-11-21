@@ -65,9 +65,11 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
 - **Joints and limits come from the URDF.** Actuated joints are ordered by walking the tree from the
   root, so an added joint lands where it sits in the chain and the action vector grows by one.
   Every actuated joint needs finite limits.
-- **Servos come from `robots/actuators.py`.** Each joint gets a position-controlled `ActuatorModel`,
-  STS3215 by default (`so101_robot(urdf, actuators={"elbow_rotate": ...})` overrides one). An
-  action in [-1, 1] is a target position across the joint's range.
+- **Servos are TOML files** in `assets/actuators/` (schema: `ActuatorModel`), e.g. `sts3215.toml`.
+  Each joint gets STS3215 by default. Override by joint with a library name or any TOML path:
+  `so101_robot(urdf, actuators={"gripper": "~/servos/fitted.toml"})`. Each backend translates
+  the model (`backends/mujoco_actuators.py`), so the same file drives every simulator. An action in
+  [-1, 1] is a target position across the joint's range.
 - **Meshes:** relative paths resolve from the URDF's folder, and `package://<pkg>/x.stl` resolves to
   `<urdf folder>/x.stl`. MuJoCo reads binary STL and OBJ.
 - **Contacts:** the robot collides with the scene but not with itself unless `self_collision=True`,

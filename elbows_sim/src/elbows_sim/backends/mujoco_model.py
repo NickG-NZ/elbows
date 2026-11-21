@@ -11,6 +11,7 @@ from pathlib import Path
 import mujoco
 
 from ..core.spec import RobotSpec, SceneSpec
+from .mujoco_actuators import add_actuator
 
 
 def load_model(scene: SceneSpec) -> mujoco.MjModel:
@@ -53,18 +54,9 @@ def _attach_robot(spec: mujoco.MjSpec, robot: RobotSpec) -> None:
 
     joints = {j.name: j for j in spec.joints}
     for name, servo in robot.actuators.items():
-        j = joints.get(name)
-        if j is None:
+        if name not in joints:
             raise KeyError(f"joint {name!r} not found in {robot.urdf.name}")
-        j.damping = [servo.damping, 0.0, 0.0]
-        j.armature = servo.armature
-        j.frictionloss = servo.frictionloss
-        a = spec.add_actuator(name=name, target=name, trntype=mujoco.mjtTrn.mjTRN_JOINT)
-        a.set_to_position(kp=servo.kp, kv=servo.kv)
-        a.forcelimited, a.forcerange = True, [-servo.force_limit, servo.force_limit]
-        if not (j.range[0] < j.range[1]):
-            raise ValueError(f"joint {name!r} needs finite limits in the URDF so actions can map onto them")
-        a.ctrllimited, a.ctrlrange = True, j.range
+        add_actuator(spec, joints[name], servo)
 
 
 def _resolve_mesh(file: str, urdf: Path) -> str:

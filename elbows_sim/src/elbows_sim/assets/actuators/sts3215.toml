@@ -1,0 +1,15 @@
+# Feetech STS3215 serial bus servo (SO-100/SO-101 joints).
+# Schema: elbows_sim.core.spec.ActuatorModel. Each backend translates it (backends/*_actuators.py).
+
+name = "sts3215"
+control = "position"  # torque = kp * (target - q) - kv * qd, clipped to +-force_limit
+
+kp = 17.8            # N·m/rad
+kv = 0.0             # N·m·s/rad
+force_limit = 3.35   # N·m, about stall torque
+damping = 0.60       # N·m·s/rad, joint viscous friction (gearbox, back-EMF)
+armature = 0.028     # kg·m², reflected rotor inertia
+frictionloss = 0.052 # N·m, dry friction
+
+source = """TheRobotStudio SO-ARM100 Simulation/SO101/joints_properties.xml (a758567), adapted there from
+Open Duck Mini. Not identified on our own servos."""
