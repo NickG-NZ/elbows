@@ -42,3 +42,4 @@ To add a recipe, add a `Recipe` to a module in `recipes/` and register it in `re
 
 Core dependencies stay light (torch plus elbows-sim) so online RL can run inside Isaac Sim's Python.
 Put heavy dependencies for offline model training (transformers, lerobot, ...) in optional extras.
+LeRobot is already one: `uv sync --extra lerobot` (see [`hardware/`](../hardware/README.md)).

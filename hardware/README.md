@@ -2,6 +2,31 @@
 
 Setup notes and local diagnostics for physical robot experiments, starting with the SO101 arm.
 
+## LeRobot (optional)
+
+LeRobot handles SO101 motor setup, calibration, teleoperation and recording, so we can use the arm
+before writing our own drivers. It is an optional extra (Python ≥ 3.12):
+
+```bash
+uv sync --extra lerobot          # a plain `uv sync` removes it again
+uv run lerobot-info
+```
+
+SO101 bring-up, following the [LeRobot SO-101 guide](https://huggingface.co/docs/lerobot/so101).
+Use `so101_leader`/`--teleop.*` instead of `so101_follower`/`--robot.*` for the leader arm.
+
+```bash
+uv run lerobot-find-port                                   # unplug/replug when prompted
+uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=<port>   # once, assigns motor IDs
+uv run lerobot-calibrate --robot.type=so101_follower --robot.port=<port> --robot.id=follower
+uv run lerobot-teleoperate \
+  --robot.type=so101_follower --robot.port=<follower-port> --robot.id=follower \
+  --teleop.type=so101_leader --teleop.port=<leader-port> --teleop.id=leader
+```
+
+Calibration is saved under `~/.cache/huggingface/lerobot/calibration/`, keyed by `id`. Reuse the
+same `id` every time. Not yet tested on our arm.
+
 ## Camera discovery
 
 From the repository root, run LeRobot's OpenCV discovery and capture tool:

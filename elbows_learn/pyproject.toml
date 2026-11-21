@@ -9,6 +9,8 @@ dependencies = ["elbows-sim", "torch>=2.4"]
 
 [project.optional-dependencies]
 modal = ["modal>=1.0"]  # cloud GPU runs (e.g. vla/pi05_libero.py)
+# SO-101 drivers, calibration, teleop, datasets and policies. LeRobot needs Python >= 3.12.
+lerobot = ["lerobot[feetech]==0.7.0; python_version >= '3.12'"]
 
 [project.scripts]
 elbows-learn = "elbows_learn.cli:main"
