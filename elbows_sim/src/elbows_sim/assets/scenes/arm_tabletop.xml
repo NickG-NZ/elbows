@@ -1,0 +1,23 @@
+<!-- Surroundings for a table-mounted arm loaded from a URDF (see RobotSpec). The robot's root link is
+     attached at the `robot_mount` site. Units: metres. -->
+<mujoco model="arm_tabletop">
+  <option timestep="0.005" integrator="implicitfast"/>
+
+  <visual>
+    <global offwidth="640" offheight="640"/>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.15 0.17 0.2" rgb2="0.2 0.22 0.26" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1"/>
+    <geom name="floor" type="plane" size="1 1 0.05" material="grid"/>
+    <site name="robot_mount" pos="0 0 0"/>
+    <camera name="front" pos="0.55 -0.55 0.45" xyaxes="0.707 0.707 0 -0.35 0.35 0.87" fovy="45"/>
+    <camera name="top" pos="0 0 1.2" xyaxes="1 0 0 0 1 0" fovy="45"/>
+  </worldbody>
+</mujoco>

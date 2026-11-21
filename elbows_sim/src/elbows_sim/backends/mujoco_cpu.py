@@ -12,6 +12,7 @@ import torch
 
 from ..core.sim import Sim
 from ..core.spec import SceneSpec
+from .mujoco_model import load_model
 
 
 class MujocoSim(Sim):
@@ -19,10 +20,7 @@ class MujocoSim(Sim):
 
     def __init__(self, scene: SceneSpec, num_envs: int, device: str | torch.device | None = None):
         super().__init__(scene, num_envs, torch.device(device or "cpu"))
-        if "mjcf" not in scene.assets:
-            raise ValueError(f"scene {scene.name!r} has no 'mjcf' asset; MuJoCo needs one")
-        m = self.model = mujoco.MjModel.from_xml_path(str(scene.assets["mjcf"]))
-        m.opt.timestep = scene.physics_dt
+        m = self.model = load_model(scene)
         self.datas = [mujoco.MjData(m) for _ in range(num_envs)]
 
         jids = [self._id(mujoco.mjtObj.mjOBJ_JOINT, j) for j in scene.actuated_joints]

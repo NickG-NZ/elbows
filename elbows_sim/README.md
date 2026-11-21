@@ -52,6 +52,30 @@ JAX finds one. On CPU it is slower than `mujoco`, so use it for thousands of env
 on an L4 runs at about 200k env-steps/s with 4,096 envs and 760k with 16,384, versus about 22k for
 `mujoco` with 64 envs. JIT compilation takes a few seconds per scene and env count.
 
+## Robots from URDF
+
+A task can load its robot from a URDF instead of a hand-written MJCF (`SceneSpec.robot`). The SO-101
+uses this. Pass any URDF of a modified design, e.g. one with a forearm roll:
+
+```python
+env = elbows_sim.make("so101_pose", urdf="~/Documents/so101-6dof/urdf/so101_6dof.urdf")
+env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
+```
+
+- **Joints and limits come from the URDF.** Actuated joints are ordered by walking the tree from the
+  root, so an added joint lands where it sits in the chain and the action vector grows by one.
+  Every actuated joint needs finite limits.
+- **Servos come from `robots/actuators.py`.** Each joint gets a position-controlled `ActuatorModel`,
+  STS3215 by default (`so101_robot(urdf, actuators={"elbow_rotate": ...})` overrides one). An
+  action in [-1, 1] is a target position across the joint's range.
+- **Meshes:** relative paths resolve from the URDF's folder, and `package://<pkg>/x.stl` resolves to
+  `<urdf folder>/x.stl`. MuJoCo reads binary STL and OBJ.
+- **Contacts:** the robot collides with the scene but not with itself unless `self_collision=True`,
+  since URDF collision meshes of adjacent links often overlap.
+- **Names are the contract.** Policies depend on joint names and order, so keep the stock names
+  when modifying the arm and only add new ones.
+- The stock model and the shared scene are in `assets/` (see `assets/README.md`).
+
 ## Adding a task
 
 Subclass `Task` (see `tasks/reach.py`), declare a `SceneSpec`, and register it in `tasks/__init__.py`.
