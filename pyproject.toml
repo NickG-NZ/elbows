@@ -6,6 +6,7 @@ dependencies = ["autoresearch[modal]", "elbows-sim[mujoco,video]", "elbows-learn
 
 [project.optional-dependencies]
 lerobot = ["elbows-learn[lerobot]"]  # uv sync --extra lerobot
+mjx = ["elbows-sim[mjx]"]  # uv sync --extra mjx
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

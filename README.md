@@ -33,7 +33,7 @@ for the real world.
 
 | Package | Purpose |
 |---|---|
-| [`elbows_sim/`](elbows_sim/README.md) | Simulator-agnostic environments, tasks and evaluation. MuJoCo today, Isaac Lab and MJWarp planned. |
+| [`elbows_sim/`](elbows_sim/README.md) | Simulator-agnostic environments, tasks and evaluation. MuJoCo and MJX today, Isaac Lab and MJWarp planned. |
 | [`elbows_learn/`](elbows_learn/README.md) | Training methods and per-task recipes on top of `elbows_sim`. PPO today; VLAs, world models and neural simulators planned. |
 | [`autoresearch/`](autoresearch/README.md) | Parallel autonomous research loops, after [karpathy/autoresearch](https://github.com/karpathy/autoresearch). |
 | [`infra/`](infra/) | Cloud agent environment and secrets bootstrap. |
@@ -87,7 +87,7 @@ Conventions for humans and coding agents are in [`AGENTS.md`](AGENTS.md).
 
 elbows is in early development and its interfaces will change.
 
-- **Working today:** MuJoCo backend, a reaching task, PPO training and video evaluation, and the
+- **Working today:** MuJoCo and MJX backends, a reaching task, PPO training and video evaluation, and the
   parallel autoresearch harness with a CPU cart-pole task.
 - **Next:** GPU simulation (Isaac Lab, MJWarp), system identification and actuator modelling,
   world models and neural simulators, and evaluation on real hardware.

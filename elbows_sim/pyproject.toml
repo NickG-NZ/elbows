@@ -1,7 +1,7 @@
 [project]
 name = "elbows-sim"
 version = "0.1.0"
-description = "Simulator-agnostic robot environments, tasks and evaluation (MuJoCo today, Isaac Lab later)"
+description = "Simulator-agnostic robot environments, tasks and evaluation (MuJoCo and MJX today, Isaac Lab later)"
 requires-python = ">=3.11"
 # Keep core deps minimal: this package must install into Isaac Sim's own Python later.
 # Never depend on elbows-learn (enforced by tests/test_layering.py).
@@ -10,6 +10,8 @@ dependencies = ["torch>=2.4", "numpy>=1.26"]
 [project.optional-dependencies]
 mujoco = ["mujoco>=3.3"]
 video = ["imageio[ffmpeg]>=2.34"]
+# MJX: MuJoCo in JAX, batched and jitted. CPU everywhere; CUDA on Linux.
+mjx = ["mujoco>=4.0.1", "mujoco-mjx>=4.0.1", "jax[cuda12]; sys_platform == 'linux'"]
 
 [project.scripts]
 elbows-sim = "elbows_sim.cli:main"

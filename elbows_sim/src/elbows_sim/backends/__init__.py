@@ -12,6 +12,7 @@ from ..core.spec import SceneSpec
 BACKENDS: dict[str, str] = {
     "mujoco": "elbows_sim.backends.mujoco_cpu:MujocoSim",
     "isaac": "elbows_sim.backends.isaac:IsaacLabSim",
+    "mjx": "elbows_sim.backends.mjx:MjxSim",  # MuJoCo in JAX; `uv sync --extra mjx`
     # "mjwarp": "elbows_sim.backends.mjwarp:MjWarpSim",  # GPU MuJoCo, same interface
 }
 

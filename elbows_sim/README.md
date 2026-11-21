@@ -1,8 +1,8 @@
 # elbows-sim
 
 Simulator-agnostic robot environments. Tasks, policies and evaluation are written once, and physics
-backends are swapped underneath. MuJoCo (CPU) runs today. Isaac Lab and MJWarp (GPU MuJoCo) are
-planned. Training code lives in [`elbows_learn/`](../elbows_learn/README.md), which depends on this package and
+backends are swapped underneath. MuJoCo (CPU) and MJX (MuJoCo in JAX, CPU or GPU) run today. Isaac Lab and
+MJWarp are planned. Training code lives in [`elbows_learn/`](../elbows_learn/README.md), which depends on this package and
 never the other way round.
 
 ```bash
@@ -27,7 +27,7 @@ res = env.step(policy.act(obs))  # res.obs, res.reward, res.terminated, res.trun
             │
  Task (tasks/*.py)                 reward / obs / reset, written against the Sim interface only
             │  Sim: joint_pos/vel, frame_pos, set_joint_state, set_marker_pos, set_action, step, render
- Sim backends (backends/*.py)      mujoco_cpu.py today; isaac.py, mjwarp.py later
+ Sim backends (backends/*.py)      mujoco_cpu.py, mjx.py today; isaac.py, mjwarp.py later
             │
  Scene assets (tasks/assets/)      MJCF today, USD later, with the same joint/site/camera names
 ```
@@ -44,6 +44,13 @@ Rules that keep the swap cheap. `tests/test_layering.py` enforces the first two:
   markers and cameras by name.
 - **Randomness comes from a CPU `torch.Generator` in the task.** The same seed gives the same
   episodes on every backend.
+
+## MJX backend
+
+`uv sync --extra mjx`, then `backend="mjx"`. It installs `jax[cuda12]` on Linux and uses the GPU when
+JAX finds one. On CPU it is slower than `mujoco`, so use it for thousands of envs on a GPU. Reach
+on an L4 runs at about 200k env-steps/s with 4,096 envs and 760k with 16,384, versus about 22k for
+`mujoco` with 64 envs. JIT compilation takes a few seconds per scene and env count.
 
 ## Adding a task
 

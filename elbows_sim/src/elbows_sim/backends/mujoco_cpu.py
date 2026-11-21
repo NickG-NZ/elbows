@@ -1,8 +1,7 @@
 """MuJoCo CPU backend: one MjModel, one MjData per env, stepped in a Python loop.
 
 This is the reference backend. It runs anywhere (including macOS) and is fast enough for small
-state-based tasks with tens to hundreds of envs. For thousands of envs on a GPU, add an MJWarp
-backend implementing the same `Sim` interface. Tasks will not need to change.
+state-based tasks with tens to hundreds of envs. For thousands of envs on a GPU, use `mjx.py`.
 """
 
 from __future__ import annotations
