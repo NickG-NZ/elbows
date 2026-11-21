@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 import torch
 from elbows_sim.core.spec import ActuatorModel
-from elbows_sim.robots import SO101_STOCK_URDF, STS3215, so101_robot, urdf_joints
+from elbows_sim.formats import urdf_joints
+from elbows_sim.robots import SO101_STOCK_URDF, STS3215, so101_robot
 
 import elbows_sim
 

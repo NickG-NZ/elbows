@@ -1,7 +1,7 @@
 # Shared sim assets
 
 Robot and scene files reused across tasks. Python descriptions that use them (servo models, robot
-builders) live in `../robots/`. Task-specific assets stay in `../tasks/assets/`.
+builders) live in `../robots/`, and file readers (URDF) in `../formats/`. Task-specific assets stay in `../tasks/assets/`.
 
 | Path | What | Source |
 |---|---|---|

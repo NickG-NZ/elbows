@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.spec import ActuatorModel, RobotSpec
+from ..formats.urdf import urdf_joints
 from .actuators import STS3215
-from .urdf import urdf_joints
 
 ASSETS = Path(__file__).parents[1] / "assets"
 STOCK_URDF = ASSETS / "so101" / "so101_new_calib.urdf"

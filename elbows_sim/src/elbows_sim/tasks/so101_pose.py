@@ -14,8 +14,8 @@ import torch
 from ..core.sim import Sim
 from ..core.spec import SceneSpec, TensorSpec
 from ..core.task import Task
+from ..formats.urdf import urdf_joints
 from ..robots.so101 import SCENE, so101_robot
-from ..robots.urdf import urdf_joints
 
 
 class So101Pose(Task):
