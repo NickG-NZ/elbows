@@ -5,6 +5,8 @@ beat frequency (random amplitudes and phases) around an upright home pose. Joint
 reference (by default `wrist_flex`) are left to the policy, which is rewarded for keeping the
 gripper's axis vertical. So PPO has to learn the posture, not just copy the reference.
 
+Safety: any self-collision or floor contact ends the episode with a penalty.
+
 Works with any SO-101 URDF: `make("so101_dance", urdf=...)`. Joint roles go by name, so a forearm
 roll called `elbow_rotate` is danced automatically; other added joints are left free.
 """
@@ -52,7 +54,8 @@ class So101Dance(Task):
         bpm: tuple[float, float] = (90.0, 130.0),
         harmonics: int = 2,
         upright_weight: float = 0.4,
-        self_collision: bool = False,
+        contact_penalty: float = 10.0,
+        self_collision: bool = True,
     ):
         robot = so101_robot(urdf, self_collision=self_collision)
         joints = urdf_joints(robot.urdf)
@@ -77,6 +80,7 @@ class So101Dance(Task):
         self.bpm = bpm
         self.harmonics = harmonics
         self.upright_weight = upright_weight
+        self.contact_penalty = contact_penalty
 
     @property
     def num_joints(self) -> int:
@@ -95,6 +99,7 @@ class So101Dance(Task):
         self.phase = torch.zeros(num_envs, n, h, device=device)
         self.prev_action = torch.zeros(num_envs, n, device=device)
         self._sums = torch.zeros(num_envs, 3, device=device)  # tracking error, upright, steps
+        self._contact = torch.zeros(num_envs, dtype=torch.bool, device=device)
 
     # --- reference -------------------------------------------------------------------------------
     def reference(self, t: torch.Tensor) -> torch.Tensor:
@@ -133,9 +138,15 @@ class So101Dance(Task):
         sim.set_joint_state(env_ids, q0, torch.zeros_like(q0))
         self.prev_action[env_ids] = self._normalise(q0)
         self._sums[env_ids] = 0.0
+        self._contact[env_ids] = False
 
     def advance(self, sim: Sim) -> None:
         self.t += sim.control_dt
+        # Safety: any self-collision or contact with the floor/scene ends the episode.
+        self._contact = sim.robot_contacts().sum(-1) > 0
+
+    def terminated(self, sim: Sim) -> torch.Tensor:
+        return self._contact.clone()
 
     def _normalise(self, q: torch.Tensor) -> torch.Tensor:
         return (q - self._mid) / self._half
@@ -165,12 +176,14 @@ class So101Dance(Task):
         self.prev_action = action.clone()
         self._sums += torch.stack([err, up, torch.ones_like(err)], dim=-1)
         w = self.upright_weight
-        return (1 - w) * track + w * upright - 0.05 * smooth - 0.001 * (sim.joint_vel() ** 2).sum(-1)
+        r = (1 - w) * track + w * upright - 0.05 * smooth - 0.001 * (sim.joint_vel() ** 2).sum(-1)
+        return r - self.contact_penalty * self._contact.float()
 
     def metrics(self, sim: Sim) -> dict[str, torch.Tensor]:
         steps = self._sums[:, 2].clamp_min(1)
         upright_cos = self._sums[:, 1] / steps
         return {
             "tracking_rms": self._sums[:, 0] / steps,  # rad, episode mean
+            "contact": self._contact.float(),  # 1 if the episode ended in a collision
             "upright_deg": torch.rad2deg(torch.arccos(upright_cos.clamp(-1, 1))),  # mean tilt from vertical
         }

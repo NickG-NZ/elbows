@@ -1,15 +1,21 @@
-# Feetech STS3215 serial bus servo (SO-100/SO-101 joints).
-# Schema: elbows_sim.core.spec.ActuatorModel. Each backend translates it (backends/*_actuators.py).
+# Feetech STS3215 serial bus servo, 12 V, 1/345 gear (SO-101 follower joints).
+# Schema and model: elbows_sim.core.spec.ActuatorModel. Each backend translates it (backends/*_actuators.py).
 
 name = "sts3215"
-control = "position"  # torque = kp * (target - q) - kv * qd, clipped to +-force_limit
+control = "position"
 
-kp = 17.8            # N·m/rad
+# Datasheet (12 V): 30 kg·cm stall, 0.222 s/60° no load.
+stall_torque = 2.942   # N·m = 30 kg·cm × 9.80665 / 100
+no_load_speed = 4.717  # rad/s = (60° in rad) / 0.222 s
+# Back-EMF damping = stall_torque / no_load_speed = 0.624 N·m·s/rad, so damping below is extra.
+
+kp = 17.8            # N·m/rad; drive saturates beyond ~0.17 rad (9.5°) of error
 kv = 0.0             # N·m·s/rad
-force_limit = 3.35   # N·m, about stall torque
-damping = 0.60       # N·m·s/rad, joint viscous friction (gearbox, back-EMF)
+damping = 0.0        # N·m·s/rad
 armature = 0.028     # kg·m², reflected rotor inertia
 frictionloss = 0.052 # N·m, dry friction
 
-source = """TheRobotStudio SO-ARM100 Simulation/SO101/joints_properties.xml (a758567), adapted there from
-Open Duck Mini. Not identified on our own servos."""
+source = """Torque and speed: Feetech STS3215 datasheet (12 V), as given by the user. kp, armature and
+frictionloss: TheRobotStudio SO-ARM100 Simulation/SO101/joints_properties.xml (a758567), adapted
+there from Open Duck Mini, whose damping 0.60 is close to the derived back-EMF term 0.624.
+Not yet identified on our own servos."""

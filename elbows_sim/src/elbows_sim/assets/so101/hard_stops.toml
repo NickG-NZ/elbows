@@ -1,0 +1,11 @@
+# Physical end stops of the stock SO-101 follower (degrees, joint zero as in so101_new_calib.urdf).
+# The URDF limits stay the command range; these are where the joint physically stops.
+
+[wrist_roll]
+lower = -163.4
+upper = 170.4
+source = """CAD sweep, `elbows_sim/scripts/hard_stop_sweep.py --joint wrist_roll` (2026-11-22): rotating the
+gripper_link meshes (Wrist_Roll_Follower, gripper servo, moving jaw) about wrist_roll against every other
+mesh, a tab on Wrist_Roll_Follower first overlaps Wrist_Roll_Pitch at -163.4 and +170.4 deg (0.3 mm voxels,
+3 mm^3 threshold; a manual sweep put the onset about 1 deg earlier). It blocks a ~26 deg arc around 180 deg.
+The URDF command limits (-157.2, +162.8) leave 6-8 deg of margin. Not yet checked on the printed part."""

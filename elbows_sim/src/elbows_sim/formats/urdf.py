@@ -24,6 +24,10 @@ class UrdfJoint:
     upper: float
 
 
+def urdf_links(path: str | Path) -> list[str]:
+    return [link.get("name") for link in ET.parse(path).getroot().findall("link")]
+
+
 def urdf_joints(path: str | Path) -> list[UrdfJoint]:
     """Actuated joints in kinematic-tree order (depth-first from the root link, siblings in file order).
 

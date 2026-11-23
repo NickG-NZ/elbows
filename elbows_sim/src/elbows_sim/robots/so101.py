@@ -14,11 +14,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.spec import ActuatorModel, RobotSpec
+from ..formats.limits import load_hard_stops
 from ..formats.urdf import urdf_joints
 from .actuators import actuator
 
 ASSETS = Path(__file__).parents[1] / "assets"
 STOCK_URDF = ASSETS / "so101" / "so101_new_calib.urdf"
+STOCK_HARD_STOPS = ASSETS / "so101" / "hard_stops.toml"
 SCENE = ASSETS / "scenes" / "arm_tabletop.xml"
 
 
@@ -29,8 +31,11 @@ def so101_robot(
     urdf: str | Path | None = None,
     actuators: dict[str, ActuatorRef] | None = None,
     default_actuator: ActuatorRef = "sts3215",
-    self_collision: bool = False,
+    hard_stops: str | Path | None = STOCK_HARD_STOPS,
+    self_collision: bool = True,
 ) -> RobotSpec:
+    """`hard_stops`: a TOML of physical end stops, applied to the joints the URDF has. The default is the
+    stock SO-101's, which also fit modified arms that keep the stock wrist and gripper."""
     path = Path(urdf).expanduser().resolve() if urdf else STOCK_URDF
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -41,4 +46,6 @@ def so101_robot(
         raise KeyError(f"actuators given for joints not in {path.name}: {sorted(unknown)}")
     default = actuator(default_actuator)
     resolved = {j: actuator(overrides[j]) if j in overrides else default for j in joints}
-    return RobotSpec(urdf=path, actuators=resolved, self_collision=self_collision)
+    stops = load_hard_stops(Path(hard_stops).expanduser()) if hard_stops else {}
+    stops = {j: s for j, s in stops.items() if j in joints}
+    return RobotSpec(urdf=path, actuators=resolved, hard_stops=stops, self_collision=self_collision)

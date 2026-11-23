@@ -68,8 +68,20 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
 - **Servos are TOML files** in `assets/actuators/` (schema: `ActuatorModel`), e.g. `sts3215.toml`.
   Each joint gets STS3215 by default. Override by joint with a library name or any TOML path:
   `so101_robot(urdf, actuators={"gripper": "~/servos/fitted.toml"})`. Each backend translates
-  the model (`backends/mujoco_actuators.py`), so the same file drives every simulator. An action in
-  [-1, 1] is a target position across the joint's range.
+  the model (`backends/mujoco_actuators.py`), so the same file drives every simulator.
+- **Servo model:** a position loop whose torque is clipped at the datasheet stall torque, plus
+  back-EMF damping (`stall_torque / no_load_speed`). Together they give the DC motor's linear
+  torque-speed curve, so joints can't exceed the datasheet no-load speed.
+- **Two limits per joint.** The URDF limits are the *command* range: an action in [-1, 1] is a
+  target position across it, so policies can't command past it. `hard_stops.toml` next to the
+  URDF holds the *physical* end stops, where the joint actually stops in sim. The SO-101's wrist
+  roll stops (-163.4, +170.4 deg) come from a CAD sweep: `scripts/hard_stop_sweep.py --joint ...`
+  finds them for any URDF joint from its meshes.
+- **Contacts:** self-collision and floor contact are on. Adjacent links are excluded, since their
+  meshes overlap at the joint. Collision uses each mesh's convex hull capped at 64 vertices
+  (`HULL_VERTS`), which is slightly conservative: about 5% of self-contacts are near misses inside
+  a hull. `sim.robot_contacts()` returns per-env [self, scene] contact counts. `so101_dance` ends
+  an episode on any contact. On MJX, mesh self-collision makes the first compile slow (minutes).
 - **Meshes:** relative paths resolve from the URDF's folder, and `package://<pkg>/x.stl` resolves to
   `<urdf folder>/x.stl`. MuJoCo reads binary STL and OBJ.
 - **Contacts:** the robot collides with the scene but not with itself unless `self_collision=True`,

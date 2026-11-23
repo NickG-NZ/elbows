@@ -70,6 +70,12 @@ def test_frame_rotation(env):
     torch.testing.assert_close(env.sim.frame_rot("tip"), expected, atol=1e-5, rtol=0)
 
 
+def test_robot_contacts_shape(env):
+    env.reset(seed=0)
+    c = env.sim.robot_contacts()
+    assert c.shape == (N, 2) and (c == 0).all()  # reach has no URDF robot
+
+
 def test_zero_action_is_zero_torque(env):
     env.reset(seed=0)
     ids = torch.arange(N, device=env.device)

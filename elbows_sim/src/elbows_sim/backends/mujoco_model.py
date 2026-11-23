@@ -13,6 +13,11 @@ import mujoco
 from ..core.spec import RobotSpec, SceneSpec
 from .mujoco_actuators import add_actuator
 
+# Collision uses each mesh's convex hull. CAD meshes give hulls of thousands of vertices, which
+# makes MJX's mesh-mesh collision run out of memory and slows the CPU backend; cap them (both
+# backends, so they agree). Rendering still uses the full meshes.
+HULL_VERTS = 64
+
 
 def load_model(scene: SceneSpec) -> mujoco.MjModel:
     if "mjcf" not in scene.assets:
@@ -34,6 +39,7 @@ def _attach_robot(spec: mujoco.MjSpec, robot: RobotSpec) -> None:
     urdf.compiler.fusestatic = False  # keep fixed links (e.g. gripper_frame_link) as named frames
     for mesh in urdf.meshes:
         mesh.file = _resolve_mesh(mesh.file, robot.urdf)
+        mesh.maxhullvert = HULL_VERTS
     if not robot.self_collision:
         # contype=1, conaffinity=0: robot geoms skip each other but still hit scene geoms (1/1 by default).
         for g in urdf.geoms:
@@ -52,11 +58,18 @@ def _attach_robot(spec: mujoco.MjSpec, robot: RobotSpec) -> None:
     finally:
         mujoco.set_mju_user_warning(previous)
 
+    if robot.self_collision:
+        # MuJoCo skips parent-child contacts, except when the parent is welded to the world (the base),
+        # so exclude every adjacent pair explicitly: their meshes overlap at the joint by design.
+        for b in urdf.bodies:
+            if b.name != "world" and b.parent is not None and b.parent.name != "world":
+                spec.add_exclude(bodyname1=b.parent.name, bodyname2=b.name)
+
     joints = {j.name: j for j in spec.joints}
     for name, servo in robot.actuators.items():
         if name not in joints:
             raise KeyError(f"joint {name!r} not found in {robot.urdf.name}")
-        add_actuator(spec, joints[name], servo)
+        add_actuator(spec, joints[name], servo, robot.hard_stops.get(name))
 
 
 def _resolve_mesh(file: str, urdf: Path) -> str:

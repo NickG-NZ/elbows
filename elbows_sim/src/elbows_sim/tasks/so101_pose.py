@@ -27,7 +27,7 @@ class So101Pose(Task):
         max_episode_steps: int = 100,
         range_fraction: float = 0.8,
         success_threshold: float = 0.05,
-        self_collision: bool = False,
+        self_collision: bool = True,
     ):
         robot = so101_robot(urdf, self_collision=self_collision)
         joints = urdf_joints(robot.urdf)

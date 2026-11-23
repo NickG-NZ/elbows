@@ -21,6 +21,7 @@ physics close to the MuJoCo backend):
                   MJCF sites have no USD equivalent; add an Xform prim or a FrameTransformer.
 - frame_rot       Same frames; `matrix_from_quat(body_quat_w)` (Isaac quats are w, x, y, z).
 - joint_limits    `articulation.data.joint_pos_limits[0, joint_ids]`.
+- robot_contacts  `ContactSensor` on the robot links, split by filter_prim_paths (self vs scene).
 - reset           `articulation.write_root_state_to_sim(default_root_state + env_origins)` and
                   `write_joint_state_to_sim(default_joint_pos, default_joint_vel, env_ids=...)`.
 - set_joint_state `articulation.write_joint_state_to_sim(pos, vel, joint_ids=..., env_ids=...)`.
@@ -28,8 +29,9 @@ physics close to the MuJoCo backend):
 - render          `TiledCamera` with the same intrinsics as the MJCF camera; `.data.output["rgb"]`.
 - scene.robot     Import the URDF (`UrdfConverterCfg`) and translate each `ActuatorModel` in an
                   `isaac_actuators.py`, as `mujoco_actuators.py` does for MuJoCo. control="position":
-                  `ImplicitActuatorCfg(stiffness=kp, damping=kv, effort_limit=force_limit, armature=armature,
-                  friction=frictionloss)`, plus joint damping. Check the friction and damping semantics match.
+                  `ImplicitActuatorCfg(stiffness=kp, damping=kv, effort_limit=stall_torque, armature=armature,
+                  friction=frictionloss)`, plus joint damping = back_emf_damping + damping for the
+                  torque-speed curve (or a DCMotorCfg). Check friction and damping semantics match.
 
 Then run `pytest elbows_sim/tests/test_backend_contract.py`. The contract tests are parametrised over
 every available backend, including checks that the same task gives the same kinematics.
@@ -71,6 +73,9 @@ class IsaacLabSim(Sim):
         raise NotImplementedError  # noqa: E704
 
     def frame_rot(self, name):
+        raise NotImplementedError  # noqa: E704
+
+    def robot_contacts(self):
         raise NotImplementedError  # noqa: E704
 
     def joint_limits(self):

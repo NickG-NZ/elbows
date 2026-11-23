@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import struct
 from pathlib import Path
 
@@ -82,22 +83,23 @@ def test_custom_urdf_joint_order_follows_the_chain(six_dof_urdf):
 
 def test_actuator_library():
     assert "sts3215" in available_actuators()
-    assert STS3215.kp == 17.8 and STS3215.force_limit == 3.35 and STS3215.control == "position"
+    assert STS3215.stall_torque == pytest.approx(30 * 9.80665 / 100, abs=1e-3)  # 30 kg·cm
+    assert STS3215.no_load_speed == pytest.approx(math.radians(60) / 0.222, abs=1e-3)  # 0.222 s/60°
     with pytest.raises(KeyError):
         actuator("no_such_servo")
 
 
 def test_actuator_file_override(tmp_path):
     f = tmp_path / "stiff.toml"
-    f.write_text('name = "stiff"\nkp = 40\nkv = 0.5\nforce_limit = 5\n')
+    f.write_text('name = "stiff"\nkp = 40\nkv = 0.5\nstall_torque = 5\nno_load_speed = 6\n')
     r = so101_robot(actuators={"gripper": str(f)})
     assert r.actuators["gripper"].kp == 40.0 and r.actuators["gripper"].damping == 0.0
     assert r.actuators["shoulder_pan"] == STS3215
 
 
 @pytest.mark.parametrize(
-    "body", ['name = "x"\nkp = 1\nkv = 0\nforce_limit = 1\ngain = 2\n', 'name = "x"\nkp = 1\n',
-             'name = "x"\nkp = 1\nkv = 0\nforce_limit = 1\ncontrol = "velocity"\n']
+    "body", ['name = "x"\nkp = 1\nkv = 0\nstall_torque = 1\nno_load_speed = 1\ngain = 2\n', 'name = "x"\nkp = 1\n',
+             'name = "x"\nkp = 1\nkv = 0\nstall_torque = 1\nno_load_speed = 1\ncontrol = "velocity"\n']
 )  # fmt: skip
 def test_bad_actuator_files_are_rejected(tmp_path, body):
     f = tmp_path / "bad.toml"
@@ -107,7 +109,7 @@ def test_bad_actuator_files_are_rejected(tmp_path, body):
 
 
 def test_actuator_overrides():
-    strong = ActuatorModel("strong", kp=50, kv=1, force_limit=10)
+    strong = ActuatorModel("strong", kp=50, stall_torque=10, no_load_speed=8, kv=1)
     r = so101_robot(actuators={"gripper": strong})
     assert r.actuators["gripper"] is strong and r.actuators["shoulder_pan"] == STS3215
     with pytest.raises(KeyError):
@@ -181,4 +183,97 @@ def test_dance_on_custom_urdf_dances_the_forearm_roll(six_dof_urdf):
     for _ in range(10):
         res = env.step(torch.zeros(2, len(names)))
     assert torch.isfinite(res.reward).all() and "tracking_rms" in res.info["episode"]
+    env.close()
+
+
+# --- realism and safety ------------------------------------------------------------------------
+HOME = [0.0, 0.0, -0.8, -0.77, 0.0, 0.3]
+SELF_POSE = [-1.28, -1.48, 1.42, 1.46, -0.34, 1.69]  # folded back onto the base
+FLOOR_POSE = [-0.03, 1.11, -0.12, 0.35, -0.63, 0.63]  # reaching down into the floor
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_servo_top_speed_matches_datasheet(backend, six_dof_urdf):
+    """A saturated, unloaded joint tops out at (stall - friction) / back-EMF damping, just under the
+    datasheet's no-load speed (0.222 s/60 deg = 4.72 rad/s)."""
+    env = elbows_sim.make("so101_pose", backend=backend, num_envs=1, urdf=six_dof_urdf)
+    env.reset(seed=0)
+    j = env.task.scene.actuated_joints.index("elbow_rotate")  # vertical axis: no gravity load
+    q = torch.zeros(1, 7, device=env.device)
+    q[0, j] = -1.5
+    env.sim.set_joint_state(torch.zeros(1, dtype=torch.long, device=env.device), q, torch.zeros_like(q))
+    action = torch.zeros(1, 7, device=env.device)
+    action[0, j] = 1.0
+    peak = 0.0
+    for _ in range(25):
+        env.sim.set_action(action)
+        env.sim.step()
+        peak = max(peak, env.sim.joint_vel()[0, j].item())
+    s = STS3215
+    expected = (s.stall_torque - s.frictionloss) / s.back_emf_damping
+    assert expected * 0.95 < peak < s.no_load_speed, (peak, expected)
+    env.close()
+
+
+def test_wrist_roll_hard_stop_and_command_range():
+    env = elbows_sim.make("so101_pose", num_envs=1)
+    j = env.task.scene.actuated_joints.index("wrist_roll")
+    stop = env.sim.joint_limits()[j]
+    torch.testing.assert_close(stop, torch.tensor([-163.4, 170.4]).deg2rad(), atol=1e-4, rtol=0)
+    env.reset(seed=0)
+    ids = torch.zeros(1, dtype=torch.long)
+    q = torch.tensor([HOME])
+    env.sim.set_joint_state(ids, q, torch.zeros_like(q))
+    action = torch.zeros(1, 6)
+    action[0, j] = 1.0  # full command: the URDF limit (+162.8 deg), inside the stop
+    for _ in range(50):
+        env.sim.set_action(action)
+        env.sim.step()
+    assert abs(math.degrees(env.sim.joint_pos()[0, j].item()) - 162.8) < 1.0
+    # Thrown at the stop, the joint stops there.
+    q[0, j], v = math.radians(168), torch.zeros(1, 6)
+    v[0, j] = 4.0
+    env.sim.set_joint_state(ids, q, v)
+    peak = -math.inf
+    for _ in range(10):
+        env.sim.step()
+        peak = max(peak, math.degrees(env.sim.joint_pos()[0, j].item()))
+    assert peak < 171.0
+    env.close()
+
+
+def test_hard_stops_must_contain_command_range(tmp_path):
+    f = tmp_path / "stops.toml"
+    f.write_text("[wrist_roll]\nlower = -100\nupper = 100\n")  # inside the URDF's +-157 deg
+    with pytest.raises(ValueError):
+        _make_with_stops(f)
+
+
+def _make_with_stops(path):
+    from elbows_sim.backends.mujoco_cpu import MujocoSim
+    from elbows_sim.core.spec import SceneSpec
+    from elbows_sim.robots.so101 import SCENE
+
+    r = so101_robot(hard_stops=path)
+    return MujocoSim(SceneSpec("x", {"mjcf": SCENE}, STOCK_JOINTS, robot=r), num_envs=1)
+
+
+def test_robot_contacts_self_floor_and_clear():
+    env = elbows_sim.make("so101_pose", num_envs=3)
+    env.reset(seed=0)
+    q = torch.tensor([HOME, SELF_POSE, FLOOR_POSE])
+    env.sim.set_joint_state(torch.arange(3), q, torch.zeros_like(q))
+    c = env.sim.robot_contacts() > 0  # [self, scene]
+    assert c.tolist() == [[False, False], [True, False], [False, True]]
+    env.close()
+
+
+def test_dance_ends_episode_on_collision():
+    env = elbows_sim.make("so101_dance", num_envs=2)
+    env.reset(seed=0)
+    q = torch.tensor([SELF_POSE, HOME])
+    env.sim.set_joint_state(torch.arange(2), q, torch.zeros_like(q))
+    res = env.step(env.task._normalise(q))
+    assert res.terminated.tolist() == [True, False]
+    assert res.reward[0] < -5 and res.info["episode"]["contact"].tolist() == [1.0]
     env.close()

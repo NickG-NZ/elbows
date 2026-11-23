@@ -65,6 +65,11 @@ class Sim(ABC):
     def joint_limits(self) -> torch.Tensor:
         """[num_actuated_joints, 2] lower/upper limits (+-inf when unlimited)."""
 
+    @abstractmethod
+    def robot_contacts(self) -> torch.Tensor:
+        """[num_envs, 2] float: number of contacts of the robot (scene.robot) with itself and with
+        the rest of the scene (floor, objects). Zeros for scenes without a URDF robot."""
+
     # --- state writes ----------------------------------------------------------------------------
     @abstractmethod
     def reset(self, env_ids: torch.Tensor) -> None:

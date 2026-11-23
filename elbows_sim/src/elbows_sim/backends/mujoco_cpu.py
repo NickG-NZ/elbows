@@ -12,6 +12,7 @@ import torch
 
 from ..core.sim import Sim
 from ..core.spec import SceneSpec
+from ..formats.urdf import urdf_links
 from .mujoco_model import load_model
 
 
@@ -54,6 +55,13 @@ class MujocoSim(Sim):
             self._markers[name] = mocap_id
         for cam in scene.cameras:
             self._id(mujoco.mjtObj.mjOBJ_CAMERA, cam)
+
+        self._robot_body = np.zeros(m.nbody, bool)  # bodies that came from the URDF
+        if scene.robot is not None:
+            for link in urdf_links(scene.robot.urdf):
+                bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, link)
+                if bid >= 0:
+                    self._robot_body[bid] = True
 
         self._renderers: dict[tuple[int, int], mujoco.Renderer] = {}
         self._dirty: set[int] = set()
@@ -121,6 +129,19 @@ class MujocoSim(Sim):
         kind, i = self._frames[name]
         attr = "site_xmat" if kind == "site" else "xmat"
         return self._tensor(np.stack([getattr(d, attr)[i].reshape(3, 3) for d in self.datas]))
+
+    def robot_contacts(self) -> torch.Tensor:
+        self._sync()
+        out = np.zeros((self.num_envs, 2))
+        rb, gb = self._robot_body, self.model.geom_bodyid
+        for i, d in enumerate(self.datas):
+            if d.ncon:
+                g = d.contact.geom[: d.ncon]
+                pen = d.contact.dist[: d.ncon] < 0
+                r1, r2 = rb[gb[g[:, 0]]], rb[gb[g[:, 1]]]
+                out[i, 0] = (pen & r1 & r2).sum()
+                out[i, 1] = (pen & (r1 ^ r2)).sum()
+        return self._tensor(out)
 
     def joint_limits(self) -> torch.Tensor:
         return self._limits

@@ -69,6 +69,11 @@ class MjxSim(Sim):
         self.data = jax.tree.map(lambda x: jnp.broadcast_to(x, (num_envs, *x.shape)), d0)
 
         self._dirty = False
+        # Per contact slot: which kind of robot contact it can be (geom pairs are fixed per model).
+        rb = jnp.asarray(self._cpu._robot_body)[jnp.asarray(m.geom_bodyid)]
+        g = d0.contact.geom
+        r1, r2 = rb[g[:, 0]], rb[g[:, 1]]
+        self._contact_kind = jnp.stack([r1 & r2, r1 ^ r2], axis=-1).astype(jnp.float32)  # [ncon, 2]
 
     # --- helpers ---------------------------------------------------------------------------------
     def _sync(self) -> None:
@@ -119,6 +124,11 @@ class MjxSim(Sim):
         kind, i = self._cpu._frames[name]
         arr = self.data.site_xmat if kind == "site" else self.data.xmat
         return self._torch(arr[:, i].reshape(self.num_envs, 3, 3))
+
+    def robot_contacts(self) -> torch.Tensor:
+        self._sync()
+        pen = (self.data.contact.dist < 0).astype(jnp.float32)  # [N, ncon]
+        return self._torch(pen @ self._contact_kind)
 
     def joint_limits(self) -> torch.Tensor:
         return self._limits

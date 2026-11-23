@@ -25,9 +25,12 @@ def load_actuator(path: str | Path) -> ActuatorModel:
         raise ValueError(f"{path}: missing keys {sorted(missing)}")
     if data.get("control", "position") not in CONTROL_MODES:
         raise ValueError(f"{path}: control must be one of {CONTROL_MODES}, got {data['control']!r}")
-    for n in ("kp", "kv", "force_limit", "damping", "armature", "frictionloss"):
+    for n in ("kp", "kv", "stall_torque", "no_load_speed", "damping", "armature", "frictionloss"):
         if n in data:
             data[n] = float(data[n])
             if data[n] < 0:
                 raise ValueError(f"{path}: {n} must be >= 0")
+    for n in ("stall_torque", "no_load_speed"):
+        if data[n] <= 0:
+            raise ValueError(f"{path}: {n} must be > 0")
     return ActuatorModel(**data)
