@@ -26,7 +26,7 @@ res = env.step(policy.act(obs))  # res.obs, res.reward, res.terminated, res.trun
  TaskEnv (core/env.py)             generic glue: episode counters, auto-reset, episode stats
             │
  Task (tasks/*.py)                 reward / obs / reset, written against the Sim interface only
-            │  Sim: joint_pos/vel, frame_pos, set_joint_state, set_marker_pos, set_action, step, render
+            │  Sim: joint_pos/vel, frame_pos/rot, set_joint_state, set_marker_pos, set_action, step, render
  Sim backends (backends/*.py)      mujoco_cpu.py, mjx.py today; isaac.py, mjwarp.py later
             │
  Scene assets (tasks/assets/)      MJCF today, USD later, with the same joint/site/camera names

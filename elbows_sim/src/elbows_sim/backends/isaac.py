@@ -19,6 +19,7 @@ physics close to the MuJoCo backend):
 - joint_pos/vel   `articulation.data.joint_pos[:, joint_ids]` / `joint_vel[:, joint_ids]`.
 - frame_pos       Body or frame world position minus `scene.env_origins`. Positions must be env-local.
                   MJCF sites have no USD equivalent; add an Xform prim or a FrameTransformer.
+- frame_rot       Same frames; `matrix_from_quat(body_quat_w)` (Isaac quats are w, x, y, z).
 - joint_limits    `articulation.data.joint_pos_limits[0, joint_ids]`.
 - reset           `articulation.write_root_state_to_sim(default_root_state + env_origins)` and
                   `write_joint_state_to_sim(default_joint_pos, default_joint_vel, env_ids=...)`.
@@ -67,6 +68,9 @@ class IsaacLabSim(Sim):
         raise NotImplementedError  # noqa: E704
 
     def frame_pos(self, name):
+        raise NotImplementedError  # noqa: E704
+
+    def frame_rot(self, name):
         raise NotImplementedError  # noqa: E704
 
     def joint_limits(self):

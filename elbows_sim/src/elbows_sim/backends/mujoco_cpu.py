@@ -116,6 +116,12 @@ class MujocoSim(Sim):
         attr = "site_xpos" if kind == "site" else "xpos"
         return self._tensor(np.stack([getattr(d, attr)[i] for d in self.datas]))
 
+    def frame_rot(self, name: str) -> torch.Tensor:
+        self._sync()
+        kind, i = self._frames[name]
+        attr = "site_xmat" if kind == "site" else "xmat"
+        return self._tensor(np.stack([getattr(d, attr)[i].reshape(3, 3) for d in self.datas]))
+
     def joint_limits(self) -> torch.Tensor:
         return self._limits
 

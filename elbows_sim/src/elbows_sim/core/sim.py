@@ -58,6 +58,10 @@ class Sim(ABC):
         """[num_envs, 3] env-local position of a named frame from `scene.frames`."""
 
     @abstractmethod
+    def frame_rot(self, name: str) -> torch.Tensor:
+        """[num_envs, 3, 3] world rotation of a named frame; column i is the frame's i-th axis in world."""
+
+    @abstractmethod
     def joint_limits(self) -> torch.Tensor:
         """[num_actuated_joints, 2] lower/upper limits (+-inf when unlimited)."""
 

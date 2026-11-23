@@ -55,7 +55,9 @@ def six_dof_urdf(tmp_path: Path) -> Path:
     links = ["base_link"] + [f"link_{n}" for n, _ in chain]
     parts = [_link(lk, "package://so101_6dof/meshes/cube.stl" if i == 3 else None) for i, lk in enumerate(links)]
     parts += [_joint(n, links[i], links[i + 1], ax) for i, (n, ax) in enumerate(chain)]
-    parts.append(_link("tool_frame") + _joint("tool_frame_joint", links[-1], "tool_frame", "1 0 0", "fixed"))
+    parts.append(
+        _link("gripper_frame_link") + _joint("gripper_frame_joint", links[-1], "gripper_frame_link", "1 0 0", "fixed")
+    )
     path = tmp_path / "so101_6dof.urdf"
     path.write_text('<robot name="so101_6dof">' + "".join(reversed(parts)) + "</robot>")
     return path
@@ -140,4 +142,43 @@ def test_stock_so101_tracks_reachable_targets():
     assert (err < 0.1).sum() >= 4, err
     img = env.render(env_ids=torch.tensor([0]), width=64, height=48)
     assert img.shape == (1, 48, 64, 3) and img.float().std() > 1.0
+    env.close()
+
+
+def test_dance_reference_and_reward_ranking():
+    """Copying the reference beats doing nothing; adding the analytic wrist correction beats both."""
+    env = elbows_sim.make("so101_dance", num_envs=8, max_episode_steps=60)
+    names = list(env.task.scene.actuated_joints)
+    assert "wrist_flex" in names and not env.task.danced[names.index("wrist_flex")]
+
+    def run(policy) -> dict:
+        env.reset(seed=0)
+        for _ in range(60):
+            res = env.step(policy())
+        return {k: v.float().mean().item() for k, v in res.info["episode"].items()}
+
+    def copy_ref(upright: bool = False):
+        ref = env.task.reference(env.task.t + env.sim.control_dt)
+        if upright:
+            i = names.index
+            ref[:, i("wrist_flex")] = -torch.pi / 2 - ref[:, i("shoulder_lift")] - ref[:, i("elbow_flex")]
+        return env.task._normalise(ref)
+
+    zero = run(lambda: torch.zeros(8, len(names)))
+    copy = run(copy_ref)
+    upright = run(lambda: copy_ref(upright=True))
+    assert zero["return"] < copy["return"] < upright["return"]
+    assert copy["tracking_rms"] < 0.05 and upright["upright_deg"] < 4
+    env.close()
+
+
+def test_dance_on_custom_urdf_dances_the_forearm_roll(six_dof_urdf):
+    env = elbows_sim.make("so101_dance", num_envs=2, urdf=six_dof_urdf, max_episode_steps=10)
+    names = list(env.task.scene.actuated_joints)
+    assert env.task.danced[names.index("elbow_rotate")]
+    obs = env.reset(seed=0)
+    assert obs["policy"].shape == (2, env.task.observation_spec()["policy"].shape[0])
+    for _ in range(10):
+        res = env.step(torch.zeros(2, len(names)))
+    assert torch.isfinite(res.reward).all() and "tracking_rms" in res.info["episode"]
     env.close()

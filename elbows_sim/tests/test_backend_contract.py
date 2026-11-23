@@ -58,6 +58,18 @@ def test_joint_state_roundtrip_and_kinematics(env):
     torch.testing.assert_close(sim.frame_pos("tip")[:, :2], expected, atol=1e-5, rtol=0)
 
 
+def test_frame_rotation(env):
+    """The tip frame of the planar arm is rotated about z by q0 + q1."""
+    env.reset(seed=0)
+    ids = torch.arange(N, device=env.device)
+    q = torch.tensor([[0.0, 0.0], [math.pi / 2, 0.0], [0.3, -1.2], [-2.0, 2.5]], device=env.device)
+    env.sim.set_joint_state(ids, q, torch.zeros_like(q))
+    a = q.sum(-1)
+    c, s, z, o = a.cos(), a.sin(), torch.zeros_like(a), torch.ones_like(a)
+    expected = torch.stack([c, -s, z, s, c, z, z, z, o], dim=-1).reshape(N, 3, 3)
+    torch.testing.assert_close(env.sim.frame_rot("tip"), expected, atol=1e-5, rtol=0)
+
+
 def test_zero_action_is_zero_torque(env):
     env.reset(seed=0)
     ids = torch.arange(N, device=env.device)

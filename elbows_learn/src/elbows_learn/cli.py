@@ -22,12 +22,28 @@ def resolve(a: argparse.Namespace) -> Recipe:
     r = RECIPES[a.recipe]
     overrides = {k: v for k, v in {"backend": a.backend, "num_envs": a.num_envs}.items() if v is not None}
     ppo = dataclasses.replace(r.ppo, total_steps=a.steps) if a.steps else r.ppo
-    return dataclasses.replace(r, ppo=ppo, **overrides)
+    task_kwargs = {**r.task_kwargs, **dict(parse_task_arg(kv) for kv in a.task_arg)}
+    return dataclasses.replace(r, ppo=ppo, task_kwargs=task_kwargs, **overrides)
+
+
+def parse_task_arg(kv: str) -> tuple[str, object]:
+    """KEY=VALUE, with VALUE parsed as JSON when possible (numbers, lists, true/false), else a string.
+    Paths in `urdf` are made absolute so the saved recipe still works from another directory."""
+    key, sep, raw = kv.partition("=")
+    if not sep:
+        raise SystemExit(f"--task-arg expects KEY=VALUE, got {kv!r}")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = raw
+    if key == "urdf":
+        value = str(Path(value).expanduser().resolve())
+    return key, value
 
 
 def cmd_list(_: argparse.Namespace) -> None:
     for r in RECIPES.values():
-        print(f"{r.name:<20} task={r.task:<10} {r.description}")
+        print(f"{r.name:<24} task={r.task:<12} {r.description}")
 
 
 def cmd_train(a: argparse.Namespace) -> None:
@@ -106,6 +122,9 @@ def main() -> None:
     t.add_argument("--steps", type=int, default=None, help="override the recipe's total_steps")
     t.add_argument("--out", default=None, help="default: runs/<recipe>-<backend>-s<seed>")
     t.add_argument("--log-every", type=int, default=10)
+    t.add_argument(
+        "--task-arg", action="append", default=[], metavar="KEY=VALUE", help="task kwarg, e.g. urdf=arm.urdf"
+    )
     t.set_defaults(fn=cmd_train)
 
     e = sub.add_parser("eval", parents=[common], help="evaluate a checkpoint, optionally with video")

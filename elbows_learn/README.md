@@ -9,6 +9,8 @@ uv run elbows-learn train reach_ppo           # ~1 min on a laptop CPU -> runs/r
 # once the Isaac backend exists: same recipe, other simulator
 # uv run elbows-learn train reach_ppo --backend isaac --num-envs 4096
 uv run elbows-learn eval runs/reach_ppo-mujoco-s0/policy.pt --video runs/reach.mp4
+uv run elbows-learn train so101_dance_ppo     # SO-101 dance, stock arm
+uv run elbows-learn train so101_dance_ppo --task-arg urdf=path/to/so101_6dof.urdf  # modified arm
 uv run --group dev pytest -q elbows_learn/tests
 ```
 
@@ -34,7 +36,7 @@ doppler run -- uv run modal run elbows_learn/src/elbows_learn/vla/pi05_libero.py
   arguments). One task can have several, e.g. `reach_ppo` and `reach_ppo_smoke`.
 - **Methods** only see `elbows_sim`'s `VecEnv` / `Policy` interfaces (and, for offline training,
   datasets), so they work on any task and any backend.
-- Command-line flags override a recipe for one run. Each run writes the resolved recipe to
+- Command-line flags override a recipe for one run; `--task-arg KEY=VALUE` sets a task argument. Each run writes the resolved recipe to
   `runs/<name>/recipe.json`, and the checkpoint stores it too, so `eval` rebuilds the same task.
 
 To add a recipe, add a `Recipe` to a module in `recipes/` and register it in `recipes/__init__.py`.

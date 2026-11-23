@@ -114,6 +114,12 @@ class MjxSim(Sim):
         arr = self.data.site_xpos if kind == "site" else self.data.xpos
         return self._torch(arr[:, i])
 
+    def frame_rot(self, name: str) -> torch.Tensor:
+        self._sync()
+        kind, i = self._cpu._frames[name]
+        arr = self.data.site_xmat if kind == "site" else self.data.xmat
+        return self._torch(arr[:, i].reshape(self.num_envs, 3, 3))
+
     def joint_limits(self) -> torch.Tensor:
         return self._limits
 

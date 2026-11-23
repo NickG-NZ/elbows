@@ -32,6 +32,10 @@ class Task(ABC):
         across backends and devices.
         """
 
+    def advance(self, sim: Sim) -> None:
+        """Called once per control step, right after `sim.step()`. Update time-varying task state here
+        (clocks, moving references) so `reward` and `observe` see the current step."""
+
     @abstractmethod
     def observe(self, sim: Sim) -> dict[str, torch.Tensor]: ...
 

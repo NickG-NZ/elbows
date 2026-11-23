@@ -75,6 +75,7 @@ class TaskEnv(VecEnv):
         action = action.to(self.device, torch.float32).clamp(-1.0, 1.0)
         self.sim.set_action(action)
         self.sim.step()
+        self.task.advance(self.sim)
         reward = self.task.reward(self.sim, action)
         terminated = self.task.terminated(self.sim)
         self.episode_len += 1
