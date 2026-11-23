@@ -1,12 +1,15 @@
+from .actuators import Actuator, DCMotor, PositionServo
 from .env import Obs, StepResult, TaskEnv, VecEnv
 from .sim import Sim
-from .spec import ActuatorModel, EnvSpec, RobotSpec, SceneSpec, TensorSpec
+from .spec import EnvSpec, RobotSpec, SceneSpec, TensorSpec
 from .task import Task
 
 __all__ = [
-    "ActuatorModel",
+    "Actuator",
+    "DCMotor",
     "EnvSpec",
     "Obs",
+    "PositionServo",
     "RobotSpec",
     "SceneSpec",
     "Sim",

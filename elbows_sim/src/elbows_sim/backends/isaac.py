@@ -27,11 +27,12 @@ physics close to the MuJoCo backend):
 - set_joint_state `articulation.write_joint_state_to_sim(pos, vel, joint_ids=..., env_ids=...)`.
 - set_marker_pos  A kinematic rigid object (or VisualizationMarkers for visual-only): write pose + env origin.
 - render          `TiledCamera` with the same intrinsics as the MJCF camera; `.data.output["rgb"]`.
-- scene.robot     Import the URDF (`UrdfConverterCfg`) and translate each `ActuatorModel` in an
-                  `isaac_actuators.py`, as `mujoco_actuators.py` does for MuJoCo. control="position":
+- scene.robot     Import the URDF (`UrdfConverterCfg`) and translate each kind in `core/actuators.py` in an
+                  `isaac_actuators.py`, as `mujoco_actuators.py` does for MuJoCo. PositionServo:
                   `ImplicitActuatorCfg(stiffness=kp, damping=kv, effort_limit=stall_torque, armature=armature,
                   friction=frictionloss)`, plus joint damping = back_emf_damping + damping for the
-                  torque-speed curve (or a DCMotorCfg). Check friction and damping semantics match.
+                  torque-speed curve (or a DCMotorCfg). DCMotor: the same with stiffness=0 and an effort
+                  target. Check friction and damping semantics match.
 
 Then run `pytest elbows_sim/tests/test_backend_contract.py`. The contract tests are parametrised over
 every available backend, including checks that the same task gives the same kinematics.

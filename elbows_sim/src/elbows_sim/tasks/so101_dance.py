@@ -50,6 +50,7 @@ class So101Dance(Task):
     def __init__(
         self,
         urdf: str | Path | None = None,
+        actuators: str | Path | None = None,  # actuator file; default: stock STS3215s
         max_episode_steps: int = 250,  # 5 s at 50 Hz
         bpm: tuple[float, float] = (90.0, 130.0),
         harmonics: int = 2,
@@ -57,7 +58,7 @@ class So101Dance(Task):
         contact_penalty: float = 10.0,
         self_collision: bool = True,
     ):
-        robot = so101_robot(urdf, self_collision=self_collision)
+        robot = so101_robot(urdf, actuators, self_collision=self_collision)
         joints = urdf_joints(robot.urdf)
         names = tuple(j.name for j in joints)
         self.scene = SceneSpec(

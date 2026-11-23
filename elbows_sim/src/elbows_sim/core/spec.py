@@ -7,6 +7,8 @@ from pathlib import Path
 
 import torch
 
+from .actuators import Actuator
+
 
 @dataclass(frozen=True)
 class TensorSpec:
@@ -17,41 +19,10 @@ class TensorSpec:
 
 
 @dataclass(frozen=True)
-class ActuatorModel:
-    """A joint servo, described independently of any simulator. Stored as TOML in `assets/actuators/`
-    (read by `elbows_sim.formats.actuator`) and translated by each backend.
-
-    control="position" models a voltage-driven DC servo with a position loop:
-
-        drive  = clip(kp * (target - q) - kv * qd, -stall_torque, +stall_torque)
-        torque = drive - (stall_torque / no_load_speed + damping) * qd - frictionloss * sign(qd)
-
-    The back-EMF term (stall_torque / no_load_speed) gives the linear torque-speed curve: full
-    torque at rest, none at `no_load_speed`, so a saturated, unloaded joint tops out there. Actions
-    in [-1, 1] map onto the joint's command range, so an action is a target joint position.
-    """
-
-    name: str
-    kp: float  # N·m/rad
-    stall_torque: float  # N·m, at the rated supply voltage
-    no_load_speed: float  # rad/s, at the rated supply voltage
-    kv: float = 0.0  # N·m·s/rad, extra derivative gain in the position loop
-    damping: float = 0.0  # N·m·s/rad, viscous friction on top of back-EMF (gearbox)
-    armature: float = 0.0  # kg·m², reflected rotor inertia
-    frictionloss: float = 0.0  # N·m, dry friction
-    control: str = "position"
-    source: str = ""  # where the numbers come from
-
-    @property
-    def back_emf_damping(self) -> float:
-        return self.stall_torque / self.no_load_speed
-
-
-@dataclass(frozen=True)
 class RobotSpec:
     """A robot loaded from a URDF and placed into a scene at the site named `mount`.
 
-    Backends add one actuator per joint in `actuators` (joint name -> servo model).
+    Backends add one actuator per joint in `actuators` (joint name -> `Actuator`).
 
     Limits: the URDF's joint limits are the *command* range (actions map onto them, a software
     safety margin). `hard_stops` (joint -> (lower, upper) rad) are the physical end stops where the
@@ -60,7 +31,7 @@ class RobotSpec:
     """
 
     urdf: Path
-    actuators: dict[str, ActuatorModel]
+    actuators: dict[str, Actuator]
     hard_stops: dict[str, tuple[float, float]] = field(default_factory=dict)
     mount: str = "robot_mount"
     self_collision: bool = False

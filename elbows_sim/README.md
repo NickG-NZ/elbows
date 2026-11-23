@@ -65,13 +65,15 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
 - **Joints and limits come from the URDF.** Actuated joints are ordered by walking the tree from the
   root, so an added joint lands where it sits in the chain and the action vector grows by one.
   Every actuated joint needs finite limits.
-- **Servos are TOML files** in `assets/actuators/` (schema: `ActuatorModel`), e.g. `sts3215.toml`.
-  Each joint gets STS3215 by default. Override by joint with a library name or any TOML path:
-  `so101_robot(urdf, actuators={"gripper": "~/servos/fitted.toml"})`. Each backend translates
-  the model (`backends/mujoco_actuators.py`), so the same file drives every simulator.
-- **Servo model:** a position loop whose torque is clipped at the datasheet stall torque, plus
-  back-EMF damping (`stall_torque / no_load_speed`). Together they give the DC motor's linear
-  torque-speed curve, so joints can't exceed the datasheet no-load speed.
+- **Actuators are a TOML file next to the URDF** (`assets/so101/actuators.toml`): a `[default]`
+  for every joint, plus `[joints.<name>]` for any joint that differs. Each table's `type` picks a
+  kind from `core/actuators.py` (`position_servo`, `dc_motor`); a modified arm can pass its own
+  file: `so101_robot(urdf, actuators="~/so101-6dof/actuators.toml")`. Each backend translates every
+  kind (`backends/mujoco_actuators.py`), so the same file drives every simulator. New kinds
+  (hydraulic, series-elastic, ...) are a dataclass plus a case per backend.
+- **SO-101 servo model (STS3215):** a position loop whose torque is clipped at the datasheet stall
+  torque, plus back-EMF damping (`stall_torque / no_load_speed`). Together they give the DC motor's
+  linear torque-speed curve, so joints can't exceed the datasheet no-load speed.
 - **Two limits per joint.** The URDF limits are the *command* range: an action in [-1, 1] is a
   target position across it, so policies can't command past it. `hard_stops.toml` next to the
   URDF holds the *physical* end stops, where the joint actually stops in sim. The SO-101's wrist

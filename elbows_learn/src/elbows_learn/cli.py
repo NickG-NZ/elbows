@@ -28,7 +28,7 @@ def resolve(a: argparse.Namespace) -> Recipe:
 
 def parse_task_arg(kv: str) -> tuple[str, object]:
     """KEY=VALUE, with VALUE parsed as JSON when possible (numbers, lists, true/false), else a string.
-    Paths in `urdf` are made absolute so the saved recipe still works from another directory."""
+    Paths in `urdf` and `actuators` are made absolute so the saved recipe still works from another directory."""
     key, sep, raw = kv.partition("=")
     if not sep:
         raise SystemExit(f"--task-arg expects KEY=VALUE, got {kv!r}")
@@ -36,7 +36,7 @@ def parse_task_arg(kv: str) -> tuple[str, object]:
         value = json.loads(raw)
     except json.JSONDecodeError:
         value = raw
-    if key == "urdf":
+    if key in ("urdf", "actuators"):
         value = str(Path(value).expanduser().resolve())
     return key, value
 

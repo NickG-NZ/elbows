@@ -1,8 +1,8 @@
 """Read joint hard-stop files: TOML tables of physical end stops, in degrees.
 
 [wrist_roll]
-lower = -162.5
-upper = 170.0
+lower = -163.4
+upper = 170.4
 source = "how it was measured"
 """
 

@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 import torch
-from elbows_sim.core.spec import ActuatorModel
-from elbows_sim.formats import load_actuator, urdf_joints
-from elbows_sim.robots import SO101_STOCK_URDF, STS3215, actuator, available_actuators, so101_robot
+from elbows_sim.core.actuators import DCMotor, PositionServo
+from elbows_sim.formats import load_actuators, urdf_joints
+from elbows_sim.robots import SO101_STOCK_URDF, so101_robot
 
 import elbows_sim
 
@@ -81,39 +81,65 @@ def test_custom_urdf_joint_order_follows_the_chain(six_dof_urdf):
     ]
 
 
-def test_actuator_library():
-    assert "sts3215" in available_actuators()
-    assert STS3215.stall_torque == pytest.approx(30 * 9.80665 / 100, abs=1e-3)  # 30 kg·cm
-    assert STS3215.no_load_speed == pytest.approx(math.radians(60) / 0.222, abs=1e-3)  # 0.222 s/60°
-    with pytest.raises(KeyError):
-        actuator("no_such_servo")
+def test_stock_actuators_are_sts3215():
+    acts = so101_robot().actuators
+    assert set(acts) == set(STOCK_JOINTS) and len(set(acts.values())) == 1
+    s = acts["shoulder_pan"]
+    assert isinstance(s, PositionServo)
+    assert s.stall_torque == pytest.approx(30 * 9.80665 / 100, abs=1e-3)  # 30 kg·cm
+    assert s.no_load_speed == pytest.approx(math.radians(60) / 0.222, abs=1e-3)  # 0.222 s/60°
 
 
-def test_actuator_file_override(tmp_path):
-    f = tmp_path / "stiff.toml"
-    f.write_text('name = "stiff"\nkp = 40\nkv = 0.5\nstall_torque = 5\nno_load_speed = 6\n')
-    r = so101_robot(actuators={"gripper": str(f)})
-    assert r.actuators["gripper"].kp == 40.0 and r.actuators["gripper"].damping == 0.0
-    assert r.actuators["shoulder_pan"] == STS3215
+SERVO = 'type = "position_servo"\nkp = 40\nstall_torque = 5\nno_load_speed = 6\n'
+
+
+def test_actuator_file_per_joint(tmp_path):
+    f = tmp_path / "actuators.toml"
+    f.write_text(f'[default]\n{SERVO}\n[joints.gripper]\ntype = "dc_motor"\nstall_torque = 1\nno_load_speed = 9\n')
+    r = so101_robot(actuators=f)
+    assert r.actuators["shoulder_pan"] == PositionServo(kp=40, stall_torque=5, no_load_speed=6)
+    assert r.actuators["gripper"] == DCMotor(stall_torque=1, no_load_speed=9)
 
 
 @pytest.mark.parametrize(
-    "body", ['name = "x"\nkp = 1\nkv = 0\nstall_torque = 1\nno_load_speed = 1\ngain = 2\n', 'name = "x"\nkp = 1\n',
-             'name = "x"\nkp = 1\nkv = 0\nstall_torque = 1\nno_load_speed = 1\ncontrol = "velocity"\n']
-)  # fmt: skip
+    "body",
+    [
+        f"[default]\n{SERVO}gain = 2\n",  # unknown field
+        '[default]\ntype = "position_servo"\nkp = 1\n',  # missing fields
+        '[default]\ntype = "hydraulic"\n',  # unknown kind
+        f"[default]\n{SERVO}armature = -1\n",  # negative
+        f"[joints.not_a_joint]\n{SERVO}",  # joint the robot lacks
+        f"[joints.gripper]\n{SERVO}",  # other joints have no actuator
+    ],
+)
 def test_bad_actuator_files_are_rejected(tmp_path, body):
     f = tmp_path / "bad.toml"
     f.write_text(body)
     with pytest.raises(ValueError):
-        load_actuator(f)
+        load_actuators(f, list(STOCK_JOINTS))
 
 
-def test_actuator_overrides():
-    strong = ActuatorModel("strong", kp=50, stall_torque=10, no_load_speed=8, kv=1)
-    r = so101_robot(actuators={"gripper": strong})
-    assert r.actuators["gripper"] is strong and r.actuators["shoulder_pan"] == STS3215
-    with pytest.raises(KeyError):
-        so101_robot(actuators={"not_a_joint": strong})
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_dc_motor_takes_torque_commands(backend, six_dof_urdf, tmp_path):
+    """A torque-commanded joint: full action is stall torque, so an unloaded joint accelerates to
+    near its no-load speed instead of holding a position."""
+    f = tmp_path / "actuators.toml"
+    f.write_text(f'[default]\n{SERVO}\n[joints.elbow_rotate]\ntype = "dc_motor"\nstall_torque = 2\nno_load_speed = 4\n')
+    env = elbows_sim.make("so101_pose", backend=backend, num_envs=1, urdf=six_dof_urdf, actuators=f)
+    env.reset(seed=0)
+    j = env.task.scene.actuated_joints.index("elbow_rotate")
+    q = torch.zeros(1, 7, device=env.device)
+    q[0, j] = -1.5
+    env.sim.set_joint_state(torch.zeros(1, dtype=torch.long, device=env.device), q, torch.zeros_like(q))
+    action = torch.zeros(1, 7, device=env.device)
+    action[0, j] = 1.0
+    peak = 0.0
+    for _ in range(25):
+        env.sim.set_action(action)
+        env.sim.step()
+        peak = max(peak, env.sim.joint_vel()[0, j].item())
+    assert 3.8 < peak < 4.01, peak  # no friction here, so it reaches the no-load speed
+    env.close()
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -209,7 +235,7 @@ def test_servo_top_speed_matches_datasheet(backend, six_dof_urdf):
         env.sim.set_action(action)
         env.sim.step()
         peak = max(peak, env.sim.joint_vel()[0, j].item())
-    s = STS3215
+    s = env.task.scene.robot.actuators["elbow_rotate"]
     expected = (s.stall_torque - s.frictionloss) / s.back_emf_damping
     assert expected * 0.95 < peak < s.no_load_speed, (peak, expected)
     env.close()

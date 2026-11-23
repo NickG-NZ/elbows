@@ -1,32 +1,40 @@
-"""Translate simulator-neutral `ActuatorModel`s into MuJoCo joints and actuators."""
+"""Translate simulator-neutral actuators (`elbows_sim.core.actuators`) into MuJoCo joints and actuators."""
 
 from __future__ import annotations
 
 import mujoco
 
-from ..core.spec import ActuatorModel
+from ..core.actuators import Actuator, DCMotor, PositionServo
 
 
 def add_actuator(
-    spec: mujoco.MjSpec, joint: mujoco.MjsJoint, model: ActuatorModel, hard_stop: tuple[float, float] | None = None
+    spec: mujoco.MjSpec, joint: mujoco.MjsJoint, act: Actuator, hard_stop: tuple[float, float] | None = None
 ) -> mujoco.MjsActuator:
-    """Set the joint's servo-side dynamics and add one actuator driving it. Controls span the joint's
-    (URDF) range; with `hard_stop`, the joint itself is allowed to travel to the physical stop."""
-    if model.control != "position":
-        raise NotImplementedError(f"MuJoCo backend has no translation for control={model.control!r}")
+    """Set the joint's drivetrain dynamics and add one actuator driving it. With `hard_stop`, the joint
+    may travel past its (URDF) command range to the physical stop."""
     if not joint.range[0] < joint.range[1]:
-        raise ValueError(f"joint {joint.name!r} needs finite limits so actions can map onto them")
-
-    # Back-EMF plus gearbox friction as (implicitly integrated) joint damping: together with the force
-    # clip below this is the linear torque-speed curve. MuJoCo 4 takes damping as coefficients.
-    joint.damping = [model.back_emf_damping + model.damping, 0.0, 0.0]
-    joint.armature = model.armature
-    joint.frictionloss = model.frictionloss
-
+        raise ValueError(f"joint {joint.name!r} needs finite limits")
+    joint.armature = act.armature
+    joint.frictionloss = act.frictionloss
+    joint.damping = [act.damping, 0.0, 0.0]  # MuJoCo 4 takes damping as polynomial coefficients
     a = spec.add_actuator(name=joint.name, target=joint.name, trntype=mujoco.mjtTrn.mjTRN_JOINT)
-    a.set_to_position(kp=model.kp, kv=model.kv)
-    a.forcelimited, a.forcerange = True, [-model.stall_torque, model.stall_torque]
-    a.ctrllimited, a.ctrlrange = True, joint.range.copy()
+
+    match act:
+        case PositionServo():
+            a.set_to_position(kp=act.kp, kv=act.kv)
+            a.ctrllimited, a.ctrlrange = True, joint.range.copy()
+        case DCMotor():
+            a.set_to_motor()
+            a.ctrllimited, a.ctrlrange = True, [-act.stall_torque, act.stall_torque]
+        case _:
+            raise NotImplementedError(f"MuJoCo backend can't model {type(act).__name__} actuators yet")
+
+    if isinstance(act, DCMotor):
+        # Torque clip at stall plus back-EMF as (implicitly integrated) joint damping: the linear
+        # torque-speed curve.
+        a.forcelimited, a.forcerange = True, [-act.stall_torque, act.stall_torque]
+        joint.damping = [act.back_emf_damping + act.damping, 0.0, 0.0]
+
     if hard_stop is not None:
         lo, hi = hard_stop
         if not (lo <= joint.range[0] and joint.range[1] <= hi):
