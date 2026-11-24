@@ -1,8 +1,8 @@
-"""elbows-devices list            connected serial ports and their USB serial numbers
-elbows-devices port <device>   current port of a device in hardware/devices.toml
+"""elbows-devices list                          connected serial ports and their USB serial numbers
+elbows-devices port --setup FILE <device>    current port of a device in a robot setup file
 
-    uv run lerobot-calibrate --robot.type=so101_follower \\
-      --robot.port=$(uv run elbows-devices port so101_follower) --robot.id=follower
+    uv run lerobot-calibrate --robot.type=so101_follower --robot.id=follower \\
+      --robot.port=$(uv run elbows-devices port --setup hardware/setups/so101.toml arm)
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import sys
 
 from serial.tools import list_ports
 
+from .config import device
 from .serial_ports import find_port
 
 
@@ -20,8 +21,8 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     port = sub.add_parser("port")
-    port.add_argument("device")
-    port.add_argument("--config", default=None)
+    port.add_argument("--setup", required=True, help="robot setup file, e.g. hardware/setups/so101.toml")
+    port.add_argument("device", help="a table name in the setup file")
     a = p.parse_args()
 
     if a.cmd == "list":
@@ -29,6 +30,9 @@ def main() -> None:
             print(f"{info.device}\tserial={info.serial_number or '-'}\t{info.description}")
         return
     try:
-        print(find_port(a.device, a.config) if a.config else find_port(a.device))
+        serial = device(a.setup, a.device).get("usb_serial")
+        if not serial:
+            sys.exit(f"[{a.device}] in {a.setup} has no usb_serial")
+        print(find_port(serial))
     except (FileNotFoundError, KeyError, LookupError) as e:
         sys.exit(str(e))

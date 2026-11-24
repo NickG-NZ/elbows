@@ -1,7 +1,7 @@
 # Hardware
 
-Setup notes, local device config (`devices.toml`, not committed) and diagnostics for physical robot
-experiments, starting with the SO101 arm. Driver and discovery code lives in `elbows_devices/`.
+Setup notes, robot setup files (`setups/`) and diagnostics for physical robot experiments, starting
+with the SO101 arm. Driver and discovery code lives in `elbows_devices/`.
 
 ## LeRobot (optional)
 
@@ -14,27 +14,26 @@ uv run lerobot-info
 ```
 
 SO101 bring-up, following the [LeRobot SO-101 guide](https://huggingface.co/docs/lerobot/so101).
-Use `so101_leader`/`--teleop.*` instead of `so101_follower`/`--robot.*` for the leader arm.
+We have a follower arm only (no leader, so no teleoperation).
 
 ```bash
-uv run lerobot-find-port                                   # unplug/replug when prompted
-uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower)   # once, assigns motor IDs
-uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower) --robot.id=follower
-uv run lerobot-teleoperate \
-  --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower) --robot.id=follower \
-  --teleop.type=so101_leader --teleop.port=$(uv run elbows-devices port so101_leader) --teleop.id=leader
+PORT=$(uv run elbows-devices port --setup hardware/setups/so101.toml arm)   # see Serial ports
+uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$PORT   # once, assigns motor IDs
+uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$PORT --robot.id=follower
 ```
 
 ### Serial ports
 
-Ports are found from each board's USB serial number, which is the same on every OS, USB socket and
-replug (the port path is not: `/dev/cu.usbmodem…` on macOS, `/dev/ttyACM0`/`ACM1` in plug order on
-Linux). Serials go in `hardware/devices.toml`, which is local and not committed:
+Each robot setup (a physical rig) has its own file, `hardware/setups/<setup>.toml`, listing its
+devices and what their drivers need. Setup files are local, not committed; pass one with `--setup`
+to point the same code at a different robot. Serial devices are found by USB serial number, which is
+the same on every OS, USB socket and replug (the port path is not: `/dev/cu.usbmodem…` on macOS,
+`/dev/ttyACM0`/`ACM1` in plug order on Linux).
 
 ```bash
-cp hardware/devices.example.toml hardware/devices.toml
-uv run elbows-devices list                   # connected ports and their USB serials
-uv run elbows-devices port so101_follower    # current port of a configured board
+cp hardware/setups/example.toml hardware/setups/so101.toml
+uv run elbows-devices list                                           # connected ports and USB serials
+uv run elbows-devices port --setup hardware/setups/so101.toml arm    # current port of a device
 ```
 
 On Linux, add yourself to the `dialout` group to open serial ports without sudo

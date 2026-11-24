@@ -1,0 +1,8 @@
+# One file per robot setup (a physical rig): copy to hardware/setups/<setup>.toml, which is not
+# committed, and pass it to tools with --setup. A different robot is a different file.
+#
+# One table per device on this rig, named however you like; keys are whatever its driver needs.
+# USB serials: `uv run elbows-devices list` shows those of connected boards.
+
+[arm]  # SO-101 follower servo bus
+usb_serial = "5C93150591"

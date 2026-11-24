@@ -1,8 +1,0 @@
-# Copy to devices.toml (not committed). One table per device; keys are whatever its driver needs.
-# Find USB serials with `uv run elbows-devices list` (plug in one board at a time if unsure).
-
-[so101_follower]
-usb_serial = "5C93150591"
-
-[so101_leader]
-usb_serial = ""

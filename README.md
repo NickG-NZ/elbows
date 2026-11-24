@@ -38,7 +38,7 @@ for the real world.
 | [`elbows_devices/`](elbows_devices/README.md) | Drivers and discovery for real hardware: arms, IMUs, cameras. Finds serial ports by USB serial number today. |
 | [`autoresearch/`](autoresearch/README.md) | Parallel autonomous research loops, after [karpathy/autoresearch](https://github.com/karpathy/autoresearch). |
 | [`infra/`](infra/) | Cloud agent environment and secrets bootstrap. |
-| [`hardware/`](hardware/README.md) | Physical robot setup notes, camera diagnostics and local device config for SO101 experiments. |
+| [`hardware/`](hardware/README.md) | Physical robot setup notes, camera diagnostics and robot setup files for SO101 experiments. |
 | [`docs/`](docs/) | [Agent infrastructure setup](docs/agent-infra.md), the [autoresearch landscape survey](docs/autoresearch-landscape.md), and [real-time control design](docs/realtime-control.md) for running policies on hardware. |
 
 ## Getting started
