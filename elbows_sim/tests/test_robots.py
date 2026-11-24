@@ -278,10 +278,10 @@ def test_hard_stops_must_contain_command_range(tmp_path):
 def _make_with_stops(path):
     from elbows_sim.backends.mujoco_cpu import MujocoSim
     from elbows_sim.core.spec import SceneSpec
-    from elbows_sim.robots.so101 import SCENE
+    from elbows_sim.scenes import ARM_TABLETOP
 
     r = so101_robot(hard_stops=path)
-    return MujocoSim(SceneSpec("x", {"mjcf": SCENE}, STOCK_JOINTS, robot=r), num_envs=1)
+    return MujocoSim(SceneSpec("x", {"mjcf": ARM_TABLETOP}, STOCK_JOINTS, robot=r), num_envs=1)
 
 
 def test_robot_contacts_self_floor_and_clear():

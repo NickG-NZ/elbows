@@ -13,7 +13,7 @@ pins down the angle.
     uv run --with trimesh python elbows_sim/scripts/hard_stop_sweep.py --joint wrist_roll
     uv run --with trimesh python elbows_sim/scripts/hard_stop_sweep.py --urdf ~/so101_6dof.urdf --joint elbow_rotate
 
-Meshes must be watertight. Record results in a hard_stops.toml next to the URDF (see assets/so101/).
+Meshes must be watertight. Record results in the robot's hard_stops.toml (see robots/so101/).
 """
 
 from __future__ import annotations
@@ -28,7 +28,8 @@ import trimesh
 from elbows_sim.backends.mujoco_cpu import MujocoSim
 from elbows_sim.core.spec import SceneSpec
 from elbows_sim.formats import urdf_joints
-from elbows_sim.robots.so101 import SCENE, so101_robot
+from elbows_sim.robots.so101 import so101_robot
+from elbows_sim.scenes import ARM_TABLETOP
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)  # spurious matmul warnings from macOS Accelerate
 
@@ -37,7 +38,7 @@ class Sweep:
     def __init__(self, urdf: str | None, joint: str, pose: str | None):
         robot = so101_robot(urdf, hard_stops=None, self_collision=False)
         names = [j.name for j in urdf_joints(robot.urdf)]
-        sim = MujocoSim(SceneSpec("sweep", {"mjcf": SCENE}, tuple(names), robot=robot), num_envs=1)
+        sim = MujocoSim(SceneSpec("sweep", {"mjcf": ARM_TABLETOP}, tuple(names), robot=robot), num_envs=1)
         self.m, self.d = m, _ = sim.model, sim.datas[0]
         jid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, joint)
         if jid < 0:

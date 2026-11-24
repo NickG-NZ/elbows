@@ -22,7 +22,8 @@ from ..core.sim import Sim
 from ..core.spec import SceneSpec, TensorSpec
 from ..core.task import Task
 from ..formats.urdf import urdf_joints
-from ..robots.so101 import SCENE, so101_robot
+from ..robots.so101 import so101_robot
+from ..scenes import ARM_TABLETOP
 
 # Upright home pose (rad): forearm angled up, gripper vertical (shoulder_lift + elbow_flex + wrist_flex
 # = -pi/2 on the stock arm). Unlisted joints start at 0.
@@ -65,7 +66,7 @@ class So101Dance(Task):
         names = tuple(j.name for j in joints)
         self.scene = SceneSpec(
             name=f"so101:{robot.urdf.stem}",
-            assets={"mjcf": SCENE},
+            assets={"mjcf": ARM_TABLETOP},
             actuated_joints=names,
             frames=(EE_FRAME,),
             cameras=("front", "top"),

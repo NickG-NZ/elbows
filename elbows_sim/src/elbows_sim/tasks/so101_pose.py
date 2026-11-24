@@ -15,7 +15,8 @@ from ..core.sim import Sim
 from ..core.spec import SceneSpec, TensorSpec
 from ..core.task import Task
 from ..formats.urdf import urdf_joints
-from ..robots.so101 import SCENE, so101_robot
+from ..robots.so101 import so101_robot
+from ..scenes import ARM_TABLETOP
 
 
 class So101Pose(Task):
@@ -34,7 +35,7 @@ class So101Pose(Task):
         joints = urdf_joints(robot.urdf)
         self.scene = SceneSpec(
             name=f"so101:{robot.urdf.stem}",
-            assets={"mjcf": SCENE},
+            assets={"mjcf": ARM_TABLETOP},
             actuated_joints=tuple(j.name for j in joints),
             cameras=("front", "top"),
             physics_dt=0.005,

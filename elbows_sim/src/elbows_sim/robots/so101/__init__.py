@@ -1,9 +1,9 @@
 """SO-101 arm: the stock model by default, or any URDF of a modified design.
 
-    so101_robot()                          # stock 6-joint follower (assets/so101/)
+    so101_robot()                          # stock 6-joint follower (upstream/)
     so101_robot("path/to/so101_6dof.urdf") # e.g. with a forearm roll; joints are read from the file
 
-What the URDF doesn't say lives in TOML files next to it: `actuators.toml` (STS3215 servos on every
+What the URDF doesn't say lives in TOML files in this folder: `actuators.toml` (STS3215 servos on every
 joint) and `hard_stops.toml`. A modified arm uses the stock files, or its own:
 
     so101_robot(urdf, actuators="~/Documents/so101-6dof/actuators.toml")
@@ -13,16 +13,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.spec import RobotSpec
-from ..formats.actuators import load_actuators
-from ..formats.limits import load_hard_stops
-from ..formats.urdf import urdf_joints
+from ...core.spec import RobotSpec
+from ...formats.actuators import load_actuators
+from ...formats.limits import load_hard_stops
+from ...formats.urdf import urdf_joints
 
-ASSETS = Path(__file__).parents[1] / "assets"
-STOCK_URDF = ASSETS / "so101" / "so101_new_calib.urdf"
-STOCK_ACTUATORS = ASSETS / "so101" / "actuators.toml"
-STOCK_HARD_STOPS = ASSETS / "so101" / "hard_stops.toml"
-SCENE = ASSETS / "scenes" / "arm_tabletop.xml"
+HERE = Path(__file__).parent
+STOCK_URDF = HERE / "upstream" / "so101_new_calib.urdf"
+STOCK_ACTUATORS = HERE / "actuators.toml"
+STOCK_HARD_STOPS = HERE / "hard_stops.toml"
 
 
 def so101_robot(

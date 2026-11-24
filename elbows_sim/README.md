@@ -65,7 +65,7 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
 - **Joints and limits come from the URDF.** Actuated joints are ordered by walking the tree from the
   root, so an added joint lands where it sits in the chain and the action vector grows by one.
   Every actuated joint needs finite limits.
-- **Actuators are a TOML file next to the URDF** (`assets/so101/actuators.toml`): a `[default]`
+- **Actuators are a TOML file in the robot's folder** (`robots/so101/actuators.toml`): a `[default]`
   for every joint, plus `[joints.<name>]` for any joint that differs. Each table's `type` picks a
   kind from `core/actuators.py` (`position_servo`, `dc_motor`); a modified arm can pass its own
   file: `so101_robot(urdf, actuators="~/so101-6dof/actuators.toml")`. Each backend translates every
@@ -75,9 +75,9 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
   torque, plus back-EMF damping (`stall_torque / no_load_speed`). Together they give the DC motor's
   linear torque-speed curve, so joints can't exceed the datasheet no-load speed.
 - **Two limits per joint.** The URDF limits are the *command* range: an action in [-1, 1] is a
-  target position across it, so policies can't command past it. `hard_stops.toml` next to the
-  URDF holds the *physical* end stops, where the joint actually stops in sim. The SO-101's wrist
-  roll stops (-163.4, +170.4 deg) come from a CAD sweep: `scripts/hard_stop_sweep.py --joint ...`
+  target position across it, so policies can't command past it. `hard_stops.toml` in the
+  robot's folder holds the *physical* end stops, where the joint actually stops in sim. The
+  SO-101's wrist roll stops (-163.4, +170.4 deg) come from a CAD sweep: `scripts/hard_stop_sweep.py --joint ...`
   finds them for any URDF joint from its meshes.
 - **Contacts:** self-collision and floor contact are on. Adjacent links are excluded, since their
   meshes overlap at the joint. Collision uses each mesh's convex hull capped at 64 vertices
@@ -86,11 +86,11 @@ env.task.scene.actuated_joints  # read from the URDF in kinematic-tree order
   an episode on any contact. On MJX, mesh self-collision makes the first compile slow (minutes).
 - **Meshes:** relative paths resolve from the URDF's folder, and `package://<pkg>/x.stl` resolves to
   `<urdf folder>/x.stl`. MuJoCo reads binary STL and OBJ.
-- **Contacts:** the robot collides with the scene but not with itself unless `self_collision=True`,
-  since URDF collision meshes of adjacent links often overlap.
 - **Names are the contract.** Policies depend on joint names and order, so keep the stock names
   when modifying the arm and only add new ones.
-- The stock model and the shared scene are in `assets/` (see `assets/README.md`).
+- **Layout:** one folder per robot, `robots/<robot>/`: its builder, `actuators.toml`, `hard_stops.toml`
+  and the unmodified upstream URDF and meshes (`robots/so101/README.md`). Shared surroundings are in
+  `scenes/`.
 
 ## Adding a task
 
