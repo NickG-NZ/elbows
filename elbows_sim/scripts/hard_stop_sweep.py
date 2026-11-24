@@ -10,8 +10,8 @@ a window around 0 deg, assumed collision-free. Contact is overlap clearly above 
 (1 mm voxels) over all pairs finds where contact starts; a fine pass (--pitch) on the pairs involved
 pins down the angle.
 
-    uv run python elbows_sim/scripts/hard_stop_sweep.py --joint wrist_roll
-    uv run python elbows_sim/scripts/hard_stop_sweep.py --urdf ~/so101_6dof.urdf --joint elbow_rotate
+    uv run --with trimesh python elbows_sim/scripts/hard_stop_sweep.py --joint wrist_roll
+    uv run --with trimesh python elbows_sim/scripts/hard_stop_sweep.py --urdf ~/so101_6dof.urdf --joint elbow_rotate
 
 Meshes must be watertight. Record results in a hard_stops.toml next to the URDF (see assets/so101/).
 """
