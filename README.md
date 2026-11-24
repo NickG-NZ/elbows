@@ -13,7 +13,6 @@
   <br>
   <a href="https://docs.astral.sh/uv/"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
   <a href="https://docs.astral.sh/ruff/"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
-  <a href="https://modal.com"><img alt="GPU: Modal" src="https://img.shields.io/badge/GPU-Modal-7FEE64.svg"></a>
   <img alt="Status: early development" src="https://img.shields.io/badge/status-early%20development-orange.svg">
 </p>
 
