@@ -35,13 +35,15 @@ DANCE = {
     "shoulder_lift": (0.3, (0.25, 0.5)),
     "elbow_flex": (0.4, (0.25, 0.5)),
     "elbow_rotate": (0.6, (0.25, 0.5)),  # forearm roll on modified arms
-    "wrist_roll": (0.8, (0.25, 0.5)),
+    "wrist_roll": (0.6, (0.25, 0.5)),
     "gripper": (0.4, (0.5,)),
 }
 
 EE_FRAME = "gripper_frame_link"
 EE_AXIS = 2  # the gripper frame's z-axis points out of the gripper
 FUTURE_S = (0.1, 0.2)  # reference look-ahead given to the policy, seconds
+
+BPM_LIMITS = (90.0, 130.0)
 
 
 class So101Dance(Task):
@@ -52,7 +54,7 @@ class So101Dance(Task):
         urdf: str | Path | None = None,
         actuators: str | Path | None = None,  # actuator file; default: stock STS3215s
         max_episode_steps: int = 250,  # 5 s at 50 Hz
-        bpm: tuple[float, float] = (90.0, 130.0),
+        bpm: tuple[float, float] = BPM_LIMITS,
         harmonics: int = 2,
         upright_weight: float = 0.4,
         contact_penalty: float = 10.0,
@@ -78,7 +80,10 @@ class So101Dance(Task):
         self.max_amp = torch.tensor([DANCE[n][0] if n in DANCE else 0.0 for n in names])
         self.fractions = [DANCE[n][1] if n in DANCE else (0.0,) for n in names]
         self.max_episode_steps = max_episode_steps
-        self.bpm = bpm
+        lo, hi = (float(b) for b in bpm)  # a list from --task-arg bpm=[100,120] works too
+        if not BPM_LIMITS[0] <= lo <= hi <= BPM_LIMITS[1]:
+            raise ValueError(f"bpm must satisfy {BPM_LIMITS[0]} <= lo <= hi <= {BPM_LIMITS[1]}, got {bpm}")
+        self.bpm = (lo, hi)
         self.harmonics = harmonics
         self.upright_weight = upright_weight
         self.contact_penalty = contact_penalty

@@ -303,3 +303,15 @@ def test_dance_ends_episode_on_collision():
     assert res.terminated.tolist() == [True, False]
     assert res.reward[0] < -5 and res.info["episode"]["contact"].tolist() == [1.0]
     env.close()
+
+
+@pytest.mark.parametrize("bpm", [(60, 120), (100, 200), (120, 100), [0, 0]])
+def test_dance_rejects_unsafe_bpm(bpm):
+    with pytest.raises(ValueError):
+        elbows_sim.make("so101_dance", num_envs=1, bpm=bpm)
+
+
+def test_dance_accepts_bpm_list():
+    env = elbows_sim.make("so101_dance", num_envs=1, bpm=[100, 120])
+    assert env.task.bpm == (100.0, 120.0)
+    env.close()
