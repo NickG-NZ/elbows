@@ -6,7 +6,14 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white">
+  <img alt="PyTorch 2.4+" src="https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C.svg?logo=pytorch&logoColor=white">
+  <img alt="MuJoCo 3.3+" src="https://img.shields.io/badge/MuJoCo-3.3%2B-0B5FFF.svg">
+  <img alt="Platform: macOS | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg">
+  <br>
+  <a href="https://docs.astral.sh/uv/"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
+  <a href="https://docs.astral.sh/ruff/"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
+  <a href="https://modal.com"><img alt="GPU: Modal" src="https://img.shields.io/badge/GPU-Modal-7FEE64.svg"></a>
   <img alt="Status: early development" src="https://img.shields.io/badge/status-early%20development-orange.svg">
 </p>
 
