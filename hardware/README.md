@@ -1,6 +1,7 @@
 # Hardware
 
-Setup notes and local diagnostics for physical robot experiments, starting with the SO101 arm.
+Setup notes, local device config (`devices.toml`, not committed) and diagnostics for physical robot
+experiments, starting with the SO101 arm. Driver and discovery code lives in `elbows_devices/`.
 
 ## LeRobot (optional)
 
@@ -17,27 +18,27 @@ Use `so101_leader`/`--teleop.*` instead of `so101_follower`/`--robot.*` for the 
 
 ```bash
 uv run lerobot-find-port                                   # unplug/replug when prompted
-uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$SO101_FOLLOWER_PORT   # once, assigns motor IDs
-uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$SO101_FOLLOWER_PORT --robot.id=follower
+uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower)   # once, assigns motor IDs
+uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower) --robot.id=follower
 uv run lerobot-teleoperate \
-  --robot.type=so101_follower --robot.port=$SO101_FOLLOWER_PORT --robot.id=follower \
-  --teleop.type=so101_leader --teleop.port=$SO101_LEADER_PORT --teleop.id=leader
+  --robot.type=so101_follower --robot.port=$(uv run elbows-devices port so101_follower) --robot.id=follower \
+  --teleop.type=so101_leader --teleop.port=$(uv run elbows-devices port so101_leader) --teleop.id=leader
 ```
 
 ### Serial ports
 
-Ports are per computer, so they live in environment variables (e.g. in `~/.zshrc`), not in code:
+Ports are found from each board's USB serial number, which is the same on every OS, USB socket and
+replug (the port path is not: `/dev/cu.usbmodem…` on macOS, `/dev/ttyACM0`/`ACM1` in plug order on
+Linux). Serials go in `hardware/devices.toml`, which is local and not committed:
 
 ```bash
-export SO101_FOLLOWER_PORT=/dev/tty.usbmodem5C931505911   # Nick's Mac
-export SO101_LEADER_PORT=...                              # from lerobot-find-port
+cp hardware/devices.example.toml hardware/devices.toml
+uv run elbows-devices list                   # connected ports and their USB serials
+uv run elbows-devices port so101_follower    # current port of a configured board
 ```
 
-- **macOS:** the name comes from the USB chip's serial number (the follower board reports
-  `5C93150591`, plus interface `1`), so it stays the same across replugs and USB ports. Each board
-  has its own name; a board swap changes it.
-- **Linux:** `/dev/ttyACM0`, `ACM1`, ... follow plug order and are not stable. Use the stable
-  `/dev/serial/by-id/usb-...<serial>...` path instead.
+On Linux, add yourself to the `dialout` group to open serial ports without sudo
+(`sudo usermod -aG dialout $USER`, then log in again).
 
 Calibration is saved under `~/.cache/huggingface/lerobot/calibration/`, keyed by `id`. Reuse the
 same `id` every time. Not yet tested on our arm.

@@ -8,6 +8,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   Only `backends/` may import a simulator; new backends must pass `tests/test_backend_contract.py`.
 - `elbows_learn/`: training. Generic methods plus `recipes/` (how to learn a given task). Depends on
   `elbows_sim`, never the reverse (`elbows_sim/tests/test_layering.py`).
+- `elbows_devices/`: drivers and device discovery for real hardware. `hardware/` holds setup notes
+  and local, uncommitted device config (`devices.toml`).
 - `autoresearch/`: parallel autonomous research loops. If you were launched as a lane, follow
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.

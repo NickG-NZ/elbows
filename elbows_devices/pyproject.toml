@@ -1,0 +1,16 @@
+[project]
+name = "elbows-devices"
+version = "0.1.0"
+description = "Drivers and device discovery for physical robots and sensors"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5"]
+
+[project.scripts]
+elbows-devices = "elbows_devices.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/elbows_devices"]

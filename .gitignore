@@ -14,3 +14,5 @@ autoresearch/tasks/*/artifacts/
 autoresearch/tasks/*/run.log
 # training runs
 runs/
+# local device config (serials, ports)
+hardware/devices.toml
