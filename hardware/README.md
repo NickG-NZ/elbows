@@ -1,7 +1,7 @@
 # Hardware
 
 Setup notes, robot setup files (`setups/`) and diagnostics for physical robot experiments, starting
-with the SO101 arm. Driver and discovery code lives in `elbows_devices/`.
+with the SO101 arm. Driver and discovery code lives in Rust, in `elbows_rt/` (`rt-devices`, `robotctl`).
 
 ## LeRobot (optional)
 
@@ -17,7 +17,7 @@ SO101 bring-up, following the [LeRobot SO-101 guide](https://huggingface.co/docs
 We have a follower arm only (no leader, so no teleoperation).
 
 ```bash
-PORT=$(uv run elbows-devices port --setup hardware/setups/so101.toml arm)   # see Serial ports
+PORT=$(robotctl devices port --setup hardware/setups/so101.toml arm)      # see Serial ports
 uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$PORT   # once, assigns motor IDs
 uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$PORT --robot.id=follower
 ```
@@ -31,9 +31,10 @@ the same on every OS, USB socket and replug (the port path is not: `/dev/cu.usbm
 `/dev/ttyACM0`/`ACM1` in plug order on Linux).
 
 ```bash
+cargo install --path elbows_rt/crates/robotctl                    # once: puts robotctl on your PATH
 cp hardware/setups/example.toml hardware/setups/so101.toml
-uv run elbows-devices list                                           # connected ports and USB serials
-uv run elbows-devices port --setup hardware/setups/so101.toml arm    # current port of a device
+robotctl devices list                                             # connected ports and USB serials
+robotctl devices port --setup hardware/setups/so101.toml arm      # current port of a device
 ```
 
 On Linux, add yourself to the `dialout` group to open serial ports without sudo

@@ -8,10 +8,11 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   Only `backends/` may import a simulator; new backends must pass `tests/test_backend_contract.py`.
 - `elbows_learn/`: training. Generic methods plus `recipes/` (how to learn a given task). Depends on
   `elbows_sim`, never the reverse (`elbows_sim/tests/test_layering.py`).
-- `elbows_devices/`: drivers and device discovery for real hardware. `hardware/` holds setup notes
-  and per-robot setup files (`hardware/setups/<setup>.toml`, local, not committed).
-- `elbows_rt/`: Rust real-time runtime (`robotd`, shared-memory IPC, device traits). Design in
-  `docs/middleware.md`. The RT thread never allocates, locks, logs or blocks.
+- `elbows_rt/`: Rust real-time runtime: `robotd`, topics over iceoryx2, device drivers and discovery
+  (`rt-devices`), `robotctl`. Design in `docs/middleware.md`. The RT thread never allocates, locks,
+  logs or blocks.
+- `hardware/`: setup notes, per-robot setup files (`hardware/setups/<setup>.toml`, local, not
+  committed) and calibration.
 - `autoresearch/`: parallel autonomous research loops. If you were launched as a lane, follow
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.

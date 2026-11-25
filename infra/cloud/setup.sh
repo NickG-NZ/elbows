@@ -10,7 +10,8 @@
 # Modal client for GPU experiments (also installed in the repo venv by `uv sync`)
 uv tool install modal >/dev/null 2>&1 || true
 
-# Rust for elbows_rt (skip if the image already has it)
+# Rust for elbows_rt (skip if the image already has it); libudev for serial-port discovery
+apt-get install -y -q libudev-dev pkg-config >/dev/null 2>&1 || echo "libudev-dev install failed"
 command -v cargo >/dev/null || (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal -c clippy -c rustfmt) || echo "rust install failed"
 
 exit 0

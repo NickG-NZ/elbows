@@ -9,7 +9,9 @@ publish.workspace = true
 
 [dependencies]
 rt-core.workspace = true
+serialport.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

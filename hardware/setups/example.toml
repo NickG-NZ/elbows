@@ -2,7 +2,7 @@
 # committed, and pass it to tools with --setup. A different robot is a different file.
 #
 # One table per device on this rig, named however you like; keys are whatever its driver needs.
-# USB serials: `uv run elbows-devices list` shows those of connected boards.
+# USB serials: `robotctl devices list` shows those of connected boards (see hardware/README.md).
 
 [arm]  # SO-101 follower servo bus
 usb_serial = "5C93150591"

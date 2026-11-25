@@ -42,11 +42,11 @@ for the real world.
 |---|---|
 | [`elbows_sim/`](elbows_sim/README.md) | Simulator-agnostic environments, tasks and evaluation. MuJoCo and MJX today, Isaac Lab and MJWarp planned. |
 | [`elbows_learn/`](elbows_learn/README.md) | Training methods and per-task recipes on top of `elbows_sim`. PPO today; VLAs, world models and neural simulators planned. |
-| [`elbows_devices/`](elbows_devices/README.md) | Drivers and discovery for real hardware: arms, IMUs, cameras. Finds serial ports by USB serial number today. |
+| [`elbows_rt/`](elbows_rt/README.md) | Rust real-time runtime: `robotd` (supervisor + control loop), zero-copy topics over iceoryx2, device drivers and discovery, `robotctl`. |
 | [`autoresearch/`](autoresearch/README.md) | Parallel autonomous research loops, after [karpathy/autoresearch](https://github.com/karpathy/autoresearch). |
 | [`infra/`](infra/) | Cloud agent environment and secrets bootstrap. |
-| [`hardware/`](hardware/README.md) | Physical robot setup notes, camera diagnostics and robot setup files for SO101 experiments. |
-| [`docs/`](docs/) | [Agent infrastructure setup](docs/agent-infra.md), the [autoresearch landscape survey](docs/autoresearch-landscape.md), and [real-time control design](docs/realtime-control.md) for running policies on hardware. |
+| [`hardware/`](hardware/README.md) | Physical robot setup notes, camera diagnostics, robot setup files and calibration for SO101 experiments. |
+| [`docs/`](docs/) | [Agent infrastructure setup](docs/agent-infra.md), the [autoresearch landscape survey](docs/autoresearch-landscape.md), [real-time control design](docs/realtime-control.md) for running policies on hardware, and the [robot middleware design](docs/middleware.md). |
 
 ## Getting started
 

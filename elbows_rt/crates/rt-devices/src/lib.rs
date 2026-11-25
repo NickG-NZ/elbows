@@ -1,11 +1,14 @@
-//! Device and transport traits. Drivers live in their own modules here (e.g. `feetech/`), one per
-//! protocol; none are implemented yet.
+//! Devices: setup files, discovery, and the device and transport traits. Drivers live in their own
+//! modules here (e.g. `feetech/`), one per protocol; none are implemented yet.
+//!
+//! - [`setup`]: robot setup files (`hardware/setups/<setup>.toml`), one table per device.
+//! - [`serial_ports`]: find a serial device's current port from its USB serial number.
 //!
 //! Two kinds of device, because they relate to the RT loop differently:
 //! - [`CyclicDevice`]: on the control bus, exchanged inside every RT cycle at a fixed phase
 //!   (servo buses; later EtherCAT drives, a sim).
 //! - [`StreamDevice`]: produces data on its own schedule; owns a thread blocking on its fd and
-//!   publishes to `rt-ipc` buffers it was given (cameras, IMUs, an INS).
+//!   publishes to topics (cameras, IMUs, an INS).
 //!
 //! Protocols sit on a [`Transport`], so swapping USB serial for CAN or RS-485 doesn't touch them.
 
@@ -14,6 +17,9 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use rt_core::trigger::Tick;
+
+pub mod serial_ports;
+pub mod setup;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceError {

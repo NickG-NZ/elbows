@@ -245,8 +245,8 @@ trait StreamDevice: Send {
   device's hardware timestamp, mapped to it) and publish. An INS can also provide the
   `DeviceTrigger`.
 - **Configuration** comes from the existing `hardware/setups/<setup>.toml` (one table per device),
-  so the Python tools in `elbows_devices` and `robotd` share one file. Device discovery (USB serial
-  → port) stays as it is in Python for now.
+  shared by `robotd`, `robotctl` and calibration tools. `rt-devices` finds a device's port from its
+  USB serial number (`robotctl devices list/port`).
 - **A sim device** (later) implements `CyclicDevice` by stepping MuJoCo. The same loop, timing and
   policy interface can then run against `elbows_sim` before touching hardware.
 

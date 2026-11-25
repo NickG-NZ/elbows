@@ -6,8 +6,9 @@ Real-time robot runtime in Rust. Design: [`docs/middleware.md`](../docs/middlewa
 |---|---|
 | `rt-core` | Messages and topic declarations, monotonic time, `ClockTrigger`, RT thread setup, cycle stats |
 | `rt-ipc` | Typed topics over iceoryx2 (zero-copy shared-memory pub/sub) |
-| `rt-devices` | `CyclicDevice`, `StreamDevice` and `Transport` traits. No drivers yet |
+| `rt-devices` | Setup files, serial-port discovery, `CyclicDevice`/`StreamDevice`/`Transport` traits. No drivers yet |
 | `robotd` | The robot process: supervisor + RT loop. `plan-demo` is a stand-in policy |
+| `robotctl` | Operator CLI: `devices list`, `devices port` (status and control later) |
 
 ```bash
 cd elbows_rt
