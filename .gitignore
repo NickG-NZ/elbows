@@ -17,3 +17,5 @@ runs/
 # robot setups: local device config (serials, addresses); only the template is committed
 hardware/setups/*
 !hardware/setups/example.toml
+# Rust (elbows_rt)
+elbows_rt/target/

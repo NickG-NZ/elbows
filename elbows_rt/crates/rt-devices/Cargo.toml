@@ -1,0 +1,15 @@
+[package]
+name = "rt-devices"
+description = "Device and transport traits for robotd drivers"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rt-core.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -10,6 +10,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   `elbows_sim`, never the reverse (`elbows_sim/tests/test_layering.py`).
 - `elbows_devices/`: drivers and device discovery for real hardware. `hardware/` holds setup notes
   and per-robot setup files (`hardware/setups/<setup>.toml`, local, not committed).
+- `elbows_rt/`: Rust real-time runtime (`robotd`, shared-memory IPC, device traits). Design in
+  `docs/middleware.md`. The RT thread never allocates, locks, logs or blocks.
 - `autoresearch/`: parallel autonomous research loops. If you were launched as a lane, follow
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.
@@ -21,6 +23,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
 - Lint/format: `uv run --group dev ruff check . && uv run --group dev ruff format .`
 - Tests: `uv run --group dev pytest -q`
 - Use modern typing (`list[str]`, `X | None`) and keep modules small.
+- Rust (in `elbows_rt/`): `cargo fmt && cargo clippy --all-targets && cargo test`. Every `unsafe`
+  block gets a `// SAFETY:` comment.
 
 ## Working in parallel
 - All commits must use Nick <nickmgoodson@gmail.com> as author and committer.

@@ -1,0 +1,17 @@
+[package]
+name = "rt-ipc"
+description = "Typed topics over iceoryx2: zero-copy pub/sub between processes on one host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rt-core.workspace = true
+bytemuck.workspace = true
+iceoryx2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

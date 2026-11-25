@@ -1,7 +1,7 @@
 # Robot middleware
 
 Design for our own real-time robot runtime, which will replace lerobot's control loop. It targets
-embedded Linux (PREEMPT_RT). Nothing here is implemented yet. It builds on
+embedded Linux (PREEMPT_RT). The first slice is built in `elbows_rt/` (see Status). It builds on
 [`realtime-control.md`](realtime-control.md), which defines the plan format, validation and watchdog.
 This doc covers the processes, threads, shared memory, pub/sub and drivers that carry it.
 
@@ -26,7 +26,7 @@ language choice does not limit which models we can run.
 │                                                                                  │
 │  supervisor thread: setup, health, logging, bridges to other processes           │
 └──────────────▲──────────────────────────────────────────────────┬────────────────┘
-               │ plan slot (shared memory)                        │ state, frames (shared memory)
+               │ plan topic (iceoryx2)                            │ state, frames (iceoryx2)
 ┌──────────────┴──────────────────────────────────────────────────▼────────────────┐
 │ policy process (non-RT): obs → action chunk → Plan.  Python first; may be remote. │
 └──────────────────────────────────────────────────────────────────────────────────┘
@@ -35,7 +35,7 @@ language choice does not limit which models we can run.
 - **`robotd` is the only process that touches hardware.** If the policy crashes, restarts or stalls,
   the RT thread holds position and then stops, as `realtime-control.md` describes.
 - **The policy process can be replaced.** It reads state and frames and writes plans. It may be
-  Python (via PyO3 bindings to the shared-memory API), Rust with `ort`, or a bridge to a remote GPU.
+  Python (via bindings to the topic API), Rust with `ort`, or a bridge to a remote GPU.
 - Later, drivers we don't trust (vendor camera SDKs) can move to their own processes behind the same
   topic API, without changing the controller.
 
@@ -87,7 +87,7 @@ the topics it watches. Anything that blocks for a long time (disk, network) gets
 which the supervisor starts and watches.
 
 - **Bring-up, in order:** load the setup, find devices, open transports, ping and configure them
-  (limits, gains, servo return delay, torque off), create segments, start driver threads, set up
+  (limits, gains, servo return delay, torque off), create topics, start driver threads, set up
   the RT thread, then start the loop.
 - **Modes:** Init → Idle (torque off) → Hold → Running → Stopping → Fault. Requests arrive on a
   command topic. The supervisor validates them and the RT thread applies them at a cycle boundary.
@@ -100,9 +100,9 @@ which the supervisor starts and watches.
   means Fault, because it can't be swapped out under the running loop.
 - **Recording:** a logger thread drains the telemetry and state queues to disk (MCAP, which
   Foxglove can open). This is also the source of episodes for `elbows_learn`.
-- **Bridges:** Zenoh threads that send selected topics off the machine.
+- **Bridges:** start and watch the Zenoh bridge that sends selected topics off the machine.
 - **Shutdown:** on `SIGINT`/`SIGTERM` it requests a stop, waits for Hold, turns torque off, joins
-  threads and removes segments.
+  threads and releases its topics.
 - **systemd watchdog:** it sends `WATCHDOG=1` only while the RT heartbeat is advancing, so systemd
   restarts a hung `robotd`.
 - **Operator CLI:** `robotctl` talks to it over the same socket (status, enable, stop).
@@ -111,123 +111,111 @@ which the supervisor starts and watches.
 hangs or dies, the RT thread still enforces limits and holds, then stops when plans go stale. The
 RT thread can always enter Stop by itself.
 
-## Shared memory between processes
+## Messaging
 
-### Chunks are a latest-value slot, not a ring buffer
+**Decision: iceoryx2 carries all messaging on the robot's host, including in the RT loop.** These
+are research robots, so a well-designed dependency in the RT path is acceptable. In exchange we get
+zero-copy pub/sub with fan-out to several subscribers, discovery, events and dead-process cleanup,
+instead of writing them ourselves.
 
-**A ring buffer is the wrong shape for plans.** A ring queues every chunk and delivers them in
-order, but a newer plan always supersedes an older one. If the policy produces two plans while the
-controller is busy, we want the second, not both.
+- **Between processes:** the `ipc` service variant (shared memory).
+- **Between threads in `robotd`:** also `ipc` for now, so tools like `robotctl` can read the same
+  topics. iceoryx2's `local` variant (process memory, same API) is there if we need it.
+- **Off the host:** Zenoh (see below). This is planned: remote inference, monitoring and teleop will
+  need it.
 
-- **Plans expire by time, not because a buffer fills up.** Each plan covers `[t0, t0 + n·dt]`. Past
-  waypoints are skipped. Past the end, the controller slows to a hold and then stops if the timeout
-  passes. A plan is also rejected if its `obs_stamp_ns` is too old, because it was computed from
-  stale state.
-- **The plan slot is a triple buffer in shared memory** with three slots and one atomic state word.
-  The policy writes into its back slot and publishes with one atomic swap. The RT thread takes the
-  newest complete slot with one atomic swap. Neither side ever waits, retries or sees a half-written
-  plan. A plan is a few KB (e.g. 50 waypoints × 7 DoF × f32 ≈ 1.4 KB).
-- Robot state going the other way uses the same type of slot. Telemetry and logs, where every
-  message matters, use rings (see the table below).
+### Our layer on top
 
-### Why no locks across processes
-
-`realtime-control.md` allows a short lock read with `try_lock` *within* a process. Across processes
-we use **only wait-free atomics**:
-
-- If a process dies while holding a lock in shared memory, the lock stays held. Robust mutexes
-  (`EOWNERDEAD`) work around this, but recovery is complex.
-- A lock shared with a non-RT process invites priority inversion.
-- A seqlock is the other common choice. Its reader retries without bound while the writer is busy,
-  and the racy copy is undefined behaviour in Rust unless it is done word by word with atomics. The
-  triple buffer has neither problem.
-
-### Rules for every shared-memory segment
-
-1. **Plain data only.** Use `#[repr(C)]` with fixed-size arrays, and no pointers, `Vec`, `String`
-   or references. Derive `zerocopy`/`bytemuck` traits so the compiler proves this.
-2. **A header checked on attach**: magic, ABI version, layout hash (type name, size, alignment,
-   fields), and capacity. A reader refuses a mismatch instead of misreading the data.
-3. **`robotd` creates every segment and owns its lifetime.** Segments live under
-   `/dev/shm/elbows/<robot>/<topic>` with mode `0600`. Policy processes attach. One writer per slot
-   is enforced with an `flock` on the segment, so a second policy can't silently interleave plans.
-4. **Contents are untrusted input.** The RT side validates every plan (`n ≤ N_MAX`, finite values,
-   limits, jumps) before using it, as `realtime-control.md` describes.
-5. **Liveness is explicit.** Each slot has a heartbeat (sequence number and publish time) that the
-   watchdog reads. A frozen writer is detected even if its last plan was valid.
-6. **The RT side maps and `mlock`s segments at startup**, never inside the loop.
-
-### Creating segments
-
-- Open `/dev/shm/elbows/<robot>/<topic>` as a file, `set_len`, then `mmap(MAP_SHARED)`, using std
-  plus `memmap2`. `shm_open` can't create subdirectories, which this layout needs. `memfd` with
-  seals (`F_SEAL_SHRINK | F_SEAL_GROW`) is the stronger option if shrinking a mapped file (which
-  causes SIGBUS) ever becomes a real risk. It needs the fd passed over the session socket.
-- At startup `robotd` deletes its own segment directory and recreates each segment with
-  `create_new` (`O_EXCL`). It prefaults with `populate()` (`MAP_POPULATE`) and calls `mlock`.
-- The owner writes the whole header first and stores the **magic** (`b"ELBW"`) last, with release
-  ordering. Attachers check the magic (acquire), then the version, layout hash and size, before
-  touching the payload. Zeroing the magic on shutdown tells attachers to detach.
-- Shared atomics must be lock-free and naturally aligned. Atomic values read from shared memory
-  are untrusted: decode and range-check an index before using it. Slot data is copied out, then
-  validated, and never used in place.
-- On macOS (dev only), a file under `$TMPDIR` replaces `/dev/shm`.
-
-### Liveness
-
-The magic says a segment is ready. It says nothing about whether its creator is still alive.
-
-- **Heartbeats decide safety.** Every writer bumps a sequence number and `CLOCK_MONOTONIC`
-  timestamp in its slot. A reader that sees them stall treats the writer as gone. This catches
-  hangs as well as crashes, and the RT thread can read it wait-free. The RT thread doesn't care
-  why plans stopped arriving: it holds, then stops.
-- **A Unix socket session handles events.** Each policy process connects to the supervisor. A
-  disconnect (EOF/`POLLHUP`) is immediate in both directions and drives cleanup, logging and
-  writer handoff. `flock` on the segment is the fallback for single-writer enforcement.
-- **Attachers re-open after an owner restart.** A deleted segment stays alive while it is mapped,
-  so after `robotd` restarts, an old policy would keep writing into an orphan without any error.
-  Re-open by path and re-check the header when the session drops, the heartbeat stalls, or
-  `stat(path)` and `fstat(fd)` report different inodes.
-
-## Pub/sub
-
-Every data stream is a **typed topic** with a declared delivery pattern. Drivers, the RT loop,
-loggers and other processes all use the same API. The transport underneath depends on where the
-subscriber is.
+A thin `Topic` wrapper (`rt-ipc`). Drivers, the controller and policies use only this API and never
+import iceoryx2 directly, so the backend can be swapped.
 
 ```rust
-let imu = bus.publisher::<ImuSample>("imu/0", Pattern::Queue { cap: 64, overflow: DropOldest })?;
-imu.publish(&sample);                         // small Copy types: one call, never blocks
-frames.publish_with(|slot| cam.read_into(slot)); // large: fill in place, published on return
+// Declared once in code, next to the message types. Name, type and pattern travel together.
+pub const PLAN:   Topic<Plan>     = Topic::latest("plan");
+pub const STATE:  Topic<ArmState> = Topic::latest("state");
+pub const EVENTS: Topic<Event>    = Topic::queue("events", 64);
 
-let imu_rx = bus.subscriber::<ImuSample>("imu/0")?;
-for s in imu_rx.drain() { est.update(s) }     // RT side: wait-free, bounded
+let pub_ = node.publisher(&STATE)?;           // created at setup: all memory allocated here
+pub_.publish(&state)?;                        // in the loop: no allocation, never blocks
+let plans = node.subscriber(&PLAN)?;
+if let Some(p) = plans.latest()? { ... }      // RT side: poll once per cycle
+sub.drain(|sample| est.update(sample))?;      // queues: every unread sample, in order
 ```
+
+- **Topics are defined in code** (a `topics` module beside the messages), so a wrong name or type
+  is a compile error. The Python bindings expose the same constants.
+- **The setup file holds the deployment:**
+  - the robot namespace (`so101/plan`), so two robots on one host never collide;
+  - device instance names (`[imu_wrist]` gives `imu_wrist/sample`; the type is fixed by the driver);
+  - rates and buffer depths;
+  - which topics are bridged off the host and which are recorded.
+- No runtime remapping: we control both ends.
+- If a language other than Rust or Python ever needs the messages, move them to a schema file and
+  generate code per language (as PX4 does with `.msg` files).
+
+### Patterns
 
 | Data | Pattern | Why |
 |---|---|---|
-| Plan (policy → RT) | Latest (triple buffer) | Only the newest matters; it is time-indexed |
-| Robot state (RT → policy) | Latest | The policy wants the current state |
-| IMU / INS samples (driver → RT) | Queue (SPSC ring), drop oldest | The estimator needs every sample in order |
-| Camera frames | Latest, zero-copy slot pool | Large; stale frames are worthless |
-| Commands/events (enable, mode, stop request) | Queue, never drop (sender gets an error when full) | Each one must be handled |
-| Telemetry, logs, cycle timing | Queue, drop oldest, with a drop counter | Must never block the RT thread |
+| Plan (policy → RT) | Latest | Only the newest matters; it is time-indexed |
+| Robot state (RT → policy, logger, viewer) | Latest | Each subscriber wants the current state |
+| IMU / INS samples (driver → RT) | Queue (oldest dropped when full) | The estimator needs every sample in order |
+| Camera frames | Latest, zero-copy | Large; stale frames are worthless |
+| Commands/events (enable, mode, stop request) | Queue, never silently dropped | Each one must be handled |
+| Telemetry, logs, cycle timing | Queue, overflow counted | Must never block the RT thread |
 
-- **A ring is the right choice for queues**, which is where the instinct for ring buffers fits:
-  single-producer single-consumer, a fixed capacity set at creation, wait-free. If there are several
-  subscribers, each gets its own read cursor, or a fan-out thread copies to each.
-- **Subscribers poll or wait on an fd.** The RT thread never sleeps on a topic; it polls at the top
-  of each cycle. Non-RT subscribers (loggers, bridges) can wait on an `eventfd` that the publisher
-  signals. Signalling is optional per topic, so RT publishers can skip the syscall.
-- **Transports:**
-  - In-process: plain atomics/rings in heap memory.
-  - Same host: the same structures in shared memory (rules above).
-  - Off-host: a bridge thread republishes selected topics over Zenoh, as planned in
-    `realtime-control.md`.
-- **The RT path has no third-party dependencies.** We write the in-process and shared-memory
-  buffers ourselves, because they are small and must be auditable. iceoryx2 (Rust-native, zero-copy
-  shared memory) is the alternative to evaluate for the non-RT, same-host transport, especially for
-  camera frames, before we build a pool ourselves.
+How `rt-ipc` maps these onto iceoryx2 (0.10), checked against its source and tested:
+
+- Every topic: safe overflow on (a full subscriber buffer drops its oldest sample), publisher
+  backpressure `DiscardData`, so **publishing never blocks** on a stalled subscriber. One publisher
+  (`max_publishers(1)` enforces single writer), up to 8 subscribers, each with its own buffer.
+- "Latest": subscriber buffer of 1 plus history of 1, so a late subscriber gets the last value.
+- "Queue": subscriber buffer of `depth`, no history. Drops are not counted yet.
+- Ports on the `ipc` variant use no locks (single-threaded policy), so they are `!Send`: each thread
+  creates its own node and ports during setup. The RT thread creates its own before the loop.
+- `publish` and `receive` don't allocate. They may make syscalls when a peer connects or
+  disconnects. Accepted for research robots; measure on the target.
+
+### Plans are latest-value, not a queue
+
+A queue is the wrong shape for plans. It delivers every chunk in order, but a newer plan always
+supersedes an older one. If the policy produces two plans while the controller is busy, we want the
+second, not both.
+
+- **Plans expire by time, not because a buffer fills up.** Each plan covers `[t0, t0 + n·dt]`. Past
+  waypoints are skipped. Past the end, the controller holds. A plan is also rejected if its
+  `obs_stamp_ns` is too old, because it was computed from stale state.
+- **Plan contents are untrusted input.** The RT side copies each plan out and validates it
+  (`n ≤ N_MAX`, finite values, limits, jumps) before using it, as `realtime-control.md` describes.
+- Messages are `#[repr(C)]` with fixed-size arrays and no pointers, `Vec` or `String`, and
+  implement iceoryx2's zero-copy marker trait.
+
+### Liveness
+
+- **Message timestamps decide safety.** Every message carries a `CLOCK_MONOTONIC` stamp. The RT
+  thread judges the policy only by whether fresh, valid plans arrive. It doesn't care whether the
+  policy crashed, hung or is slow: it holds either way.
+- **iceoryx2 cleans up dead nodes** when another node is created or a topic is opened. Tested: after
+  a policy is SIGKILLed, a new one can take the single plan-publisher slot. A second `robotd` for the
+  same robot is refused (the state topic already has its publisher). A Unix socket session (with
+  `robotctl`) remains the plan for prompt disconnect events. Not yet tested: `robotd` restarting
+  under a running policy.
+- **The RT thread creates its ports and locks memory before the loop starts.** Nothing is created or
+  connected inside the loop.
+
+### Off the host: Zenoh
+
+Remote inference on a GPU machine (or Modal), monitoring and teleop from a laptop, recording
+elsewhere, and multiple robots all need traffic to leave the robot. A bridge process republishes
+selected topics (listed in the setup file) over Zenoh, using the per-stream link choices in
+`realtime-control.md`. The bridge sits behind the same topic API, so nothing in `robotd` changes. To
+evaluate when we build it: iceoryx2's own Zenoh tunnel versus a bridge of our own.
+
+### First prototype
+
+Before this decision, `rt-ipc` was a hand-written latest-value triple buffer and SPSC ring in shared
+memory, one writer and one reader each. It was replaced before being committed, because it had no
+fan-out, discovery or dead-process cleanup.
 
 ## Drivers
 
@@ -287,11 +275,28 @@ memory and must be checked on the hardware.
 elbows_rt/                 Cargo workspace
   crates/
     rt-core/               Tick, Trigger, RT thread setup, timing stats
-    rt-ipc/                Latest slot, SPSC ring, shared-memory segments, topics/Bus
+    rt-ipc/                Node/Publisher/Subscriber over iceoryx2 (topics are declared in rt-core)
     rt-devices/            CyclicDevice/StreamDevice/Transport traits; drivers added per device
     robotd/                the main binary: config → devices → RT loop → supervisor
     rt-py/                 PyO3 bindings: attach to topics, write plans, read state
 ```
+
+## Status
+
+Built in `elbows_rt/` and tested on macOS (no RT scheduling there), not yet on the robot:
+
+- `rt-ipc`: typed topics over iceoryx2 (fan-out, history, drop-oldest, single publisher; tested).
+- `rt-core`: messages and topic declarations, `ClockTrigger`, RT thread setup, cycle stats, plan
+  validation and sampling.
+- `rt-devices`: the traits only.
+- `robotd`: supervisor (signals, stall detection, status) plus the RT loop following plans with no
+  devices. `plan-demo` stands in for a policy.
+- End to end at 500 Hz on a laptop: plans followed with none rejected; Hold when the policy is
+  killed; a replacement policy takes over; a second `robotd` is refused. Wake-up latency p99
+  < 0.5 ms, max ~2 ms, without RT scheduling.
+
+Next: the Feetech driver, the session socket and `robotctl`, Python bindings (`rt-py`), plan
+blending, recording, the device trigger and the Zenoh bridge.
 
 ## Open questions
 

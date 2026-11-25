@@ -10,4 +10,7 @@
 # Modal client for GPU experiments (also installed in the repo venv by `uv sync`)
 uv tool install modal >/dev/null 2>&1 || true
 
+# Rust for elbows_rt (skip if the image already has it)
+command -v cargo >/dev/null || (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal -c clippy -c rustfmt) || echo "rust install failed"
+
 exit 0

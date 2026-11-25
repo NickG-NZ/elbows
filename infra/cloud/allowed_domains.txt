@@ -5,6 +5,9 @@ modal.com
 *.modal.com
 *.modal.run
 download.pytorch.org
+# Rust toolchain (crates.io is in the default package-manager list)
+sh.rustup.rs
+static.rust-lang.org
 # Optional, as you start using them:
 # huggingface.co
 # *.hf.co

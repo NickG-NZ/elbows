@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+rt-core = { path = "crates/rt-core" }
+rt-ipc = { path = "crates/rt-ipc" }
+rt-devices = { path = "crates/rt-devices" }
+bytemuck = { version = "1.16", features = ["derive", "min_const_generics"] }
+iceoryx2 = "0.10.1"
+iceoryx2-bb-derive-macros = "0.10.1"
+iceoryx2-bb-elementary-traits = "0.10.1"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+signal-hook = "0.3"
+thiserror = "2"
+toml = "0.8"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
