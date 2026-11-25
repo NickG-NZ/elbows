@@ -2,6 +2,7 @@
 
 Design notes for running learned policies (VLAs such as π0.5, RL policies) on real hardware.
 Nothing here is implemented yet. The simulation pieces at the end are the next step.
+The runtime that carries this (processes, shared memory, pub/sub, drivers) is in [`middleware.md`](middleware.md).
 
 ## Layers
 
