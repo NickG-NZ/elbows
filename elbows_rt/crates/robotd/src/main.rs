@@ -1,38 +1,37 @@
 //! `robotd`: the one process that owns the robot's hardware.
 //!
-//! The main thread is the supervisor: config, signals, health and status. It spawns the RT thread,
-//! which runs the control loop. Policies talk to it through topics (`rt_core::topics`), namespaced
-//! by robot name:
+//! Two threads:
+//! - **RT thread**: the control loop. Talks to policies through local topics (`rt_core::topics`,
+//!   namespaced by robot name) and to the supervisor in-process. Starts **disabled**.
+//! - **Supervisor** (the main thread): robotd's only external interface. Commands and sessions
+//!   over Zenoh (`rt-net`), the bridge for remote policies and viewers, health.
 //!
-//! - `<robot>/plan`   — the policy publishes, the RT thread subscribes
-//! - `<robot>/state`  — the RT thread publishes every cycle; policies, loggers, viewers subscribe
-//! - `<robot>/status` — the RT thread publishes ~10 Hz; the supervisor (and later `robotctl`) subscribe
+//! Local topics: `<robot>/plan` (policy → RT), `<robot>/state` (RT → anyone, every cycle),
+//! `<robot>/status` (RT → anyone, ~10 Hz). Zenoh keys: see `rt-net`.
 //!
-//! Usage: `robotd --robot so101 [--setup hardware/setups/so101] [--rate-hz 200]`
+//! Usage: `robotd --robot so101 [--setup hardware/setups/so101] [--rate-hz 200]`, then
+//! `robotctl --robot so101 enable`.
 
 mod config;
 mod controller;
 mod rt_loop;
+mod supervisor;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::mpsc::sync_channel;
 
-use rt_core::msgs::{DOF, Mode, Status};
+use rt_core::msgs::DOF;
 use rt_core::rt::{RT_STACK_BYTES, setup_current_thread};
-use rt_core::topics::STATUS;
 use rt_core::trigger::ClockTrigger;
-use rt_ipc::Node;
+use rt_net::NetConfig;
 
 use crate::config::Config;
 use crate::controller::Controller;
-use crate::rt_loop::RtLoop;
-
-const SUPERVISOR_PERIOD: Duration = Duration::from_millis(100);
-const REPORT_PERIOD: Duration = Duration::from_secs(1);
-const STALL_AFTER: Duration = Duration::from_millis(500);
+use crate::rt_loop::{RtLoop, SupervisorLink};
+use crate::supervisor::{RtLink, Supervisor};
 
 struct Args {
     robot: String,
@@ -95,17 +94,27 @@ fn run() -> Result<(), String> {
             .map_err(|e| format!("signal handler: {e}"))?;
     }
 
-    // The RT thread: real-time setup first, then its node and ports, then the loop.
+    // In-process links between the supervisor and the RT thread, allocated up front.
+    let (commands_tx, commands_rx) = sync_channel(16);
+    let (outcomes_tx, outcomes_rx) = sync_channel(16);
+    let (status_tx, status_rx) = sync_channel(4);
     let heartbeat = Arc::new(AtomicU64::new(0));
+    let rt_link = SupervisorLink {
+        commands: commands_rx,
+        outcomes: outcomes_tx,
+        status: status_tx,
+        heartbeat: heartbeat.clone(),
+    };
+
+    // The RT thread: real-time setup first, then its node and ports, then the loop.
     let rt_stop = Arc::new(AtomicBool::new(false));
     let rt_cfg = cfg.rt_config();
     let (setup_tx, setup_rx) = std::sync::mpsc::channel::<(Vec<String>, Result<(), String>)>();
     let rt_thread = {
-        let (robot, cfg, rt_cfg, heartbeat, stop) = (
+        let (robot, cfg, rt_cfg, stop) = (
             args.robot.clone(),
             cfg.clone(),
             rt_cfg.clone(),
-            heartbeat.clone(),
             rt_stop.clone(),
         );
         std::thread::Builder::new()
@@ -125,7 +134,7 @@ fn run() -> Result<(), String> {
                     Box::new(ClockTrigger::from_hz(cfg.rate_hz)),
                     Vec::new(), // drivers (Feetech first) go here, after `start()`
                     Controller::new(cfg.plan_limits(), [0.0; DOF]),
-                    heartbeat,
+                    rt_link,
                     cfg.max_consecutive_overruns,
                 );
                 match built {
@@ -141,6 +150,12 @@ fn run() -> Result<(), String> {
             })
             .map_err(|e| format!("spawn RT thread: {e}"))?
     };
+    let stop_rt = |rt_thread: std::thread::JoinHandle<()>| {
+        rt_stop.store(true, Ordering::Relaxed);
+        rt_thread
+            .join()
+            .map_err(|_| "RT thread panicked".to_string())
+    };
 
     let (failed, built) = setup_rx
         .recv()
@@ -152,55 +167,37 @@ fn run() -> Result<(), String> {
         let _ = rt_thread.join();
         return Err(e);
     }
-    eprintln!("robotd: {} running at {} Hz", args.robot, cfg.rate_hz);
 
-    // Supervisor loop.
-    let node = Node::new(&args.robot, "robotd").map_err(|e| e.to_string())?;
-    let status_rx = node.subscriber(&STATUS).map_err(|e| e.to_string())?;
-    let mut last_hb = (heartbeat.load(Ordering::Acquire), Instant::now());
-    let mut stalled = false;
-    let mut last_report = Instant::now();
-    let mut status: Option<Status> = None;
-    while !term.load(Ordering::Relaxed) && !rt_thread.is_finished() {
-        std::thread::sleep(SUPERVISOR_PERIOD);
-        let hb = heartbeat.load(Ordering::Acquire);
-        if hb != last_hb.0 {
-            last_hb = (hb, Instant::now());
-            stalled = false;
-        } else if !stalled && last_hb.1.elapsed() > STALL_AFTER {
-            eprintln!("robotd: RT thread stalled at tick {hb}");
-            stalled = true;
+    // The supervisor, on this thread.
+    let net_cfg = NetConfig {
+        listen: cfg.net.listen.clone(),
+        connect: Vec::new(),
+    };
+    let supervisor = rt_net::open(&net_cfg)
+        .map_err(|e| e.to_string())
+        .and_then(|net| {
+            let rt = RtLink {
+                commands: commands_tx,
+                outcomes: outcomes_rx,
+                status: status_rx,
+                heartbeat,
+            };
+            Supervisor::new(&args.robot, rt, net)
+        });
+    let mut supervisor = match supervisor {
+        Ok(s) => s,
+        Err(e) => {
+            stop_rt(rt_thread)?;
+            return Err(e);
         }
-        if let Ok(Some(s)) = status_rx.latest() {
-            status = Some(s);
-        }
-        if last_report.elapsed() >= REPORT_PERIOD {
-            if let Some(s) = &status {
-                report(s);
-            }
-            last_report = Instant::now();
-        }
-    }
+    };
+    eprintln!(
+        "robotd: {} at {} Hz, disabled; commands on {:?} (robotctl --robot {} enable)",
+        args.robot, cfg.rate_hz, cfg.net.listen, args.robot
+    );
+    supervisor.run(&term, || rt_thread.is_finished());
 
-    rt_stop.store(true, Ordering::Relaxed);
-    rt_thread
-        .join()
-        .map_err(|_| "RT thread panicked".to_string())?;
+    stop_rt(rt_thread)?;
     eprintln!("robotd: stopped");
     Ok(())
-}
-
-fn report(s: &Status) {
-    let mode = Mode::from_u32(s.last.mode).map_or("?".into(), |m| format!("{m:?}"));
-    let st = &s.stats;
-    eprintln!(
-        "robotd: {mode:<7} plan {:<5} rejected {:<3} | cycles {} missed {} | latency p99 <{}µs max {}µs | exec p99 <{}µs",
-        s.last.plan_seq,
-        s.last.plans_rejected,
-        st.cycles,
-        st.missed,
-        st.latency.quantile_us(0.99),
-        st.latency.max_ns / 1000,
-        st.exec.quantile_us(0.99),
-    );
 }

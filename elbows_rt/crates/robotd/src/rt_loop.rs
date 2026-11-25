@@ -1,10 +1,15 @@
 //! The RT thread's cycle. Everything it touches is created before `run` starts, on the RT thread
 //! itself (iceoryx2 ports can't move between threads).
+//!
+//! Talks to the supervisor in-process only, never through the network or topics: mode commands in,
+//! outcomes and status out, over bounded channels allocated up front (`try_recv`/`try_send` never
+//! block or allocate).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender};
 
-use rt_core::msgs::{ArmState, Plan, Status};
+use rt_core::msgs::{ArmState, Mode, Plan, Status};
 use rt_core::stats::CycleStats;
 use rt_core::time::monotonic_ns;
 use rt_core::topics::{PLAN, STATE, STATUS};
@@ -12,9 +17,31 @@ use rt_core::trigger::Trigger;
 use rt_devices::CyclicDevice;
 use rt_ipc::{IpcError, Node, Publisher, Subscriber};
 
-use crate::controller::Controller;
+use crate::controller::{Controller, ModeCommand};
 
 const STATUS_PERIOD_NS: u64 = 100_000_000;
+/// Commands applied per cycle at most, so a flood can't stretch a cycle.
+const MAX_COMMANDS_PER_CYCLE: usize = 4;
+
+pub struct CommandRequest {
+    pub id: u64,
+    pub cmd: ModeCommand,
+}
+
+pub struct CommandOutcome {
+    pub id: u64,
+    pub result: Result<(), &'static str>,
+    pub mode: Mode,
+}
+
+/// The RT thread's ends of its in-process links to the supervisor.
+pub struct SupervisorLink {
+    pub commands: Receiver<CommandRequest>,
+    pub outcomes: SyncSender<CommandOutcome>,
+    pub status: SyncSender<Status>,
+    /// Last tick index; the supervisor checks that it advances.
+    pub heartbeat: Arc<AtomicU64>,
+}
 
 pub struct RtLoop {
     trigger: Box<dyn Trigger>,
@@ -23,8 +50,7 @@ pub struct RtLoop {
     plans: Subscriber<Plan>,
     state: Publisher<ArmState>,
     status: Publisher<Status>,
-    /// Last tick index; the supervisor checks that it advances.
-    heartbeat: Arc<AtomicU64>,
+    link: SupervisorLink,
     max_consecutive_overruns: u32,
     _node: Node,
 }
@@ -36,7 +62,7 @@ impl RtLoop {
         trigger: Box<dyn Trigger>,
         devices: Vec<Box<dyn CyclicDevice>>,
         controller: Controller,
-        heartbeat: Arc<AtomicU64>,
+        link: SupervisorLink,
         max_consecutive_overruns: u32,
     ) -> Result<Self, IpcError> {
         let node = Node::new(robot, "robotd-rt")?;
@@ -47,7 +73,7 @@ impl RtLoop {
             trigger,
             devices,
             controller,
-            heartbeat,
+            link,
             max_consecutive_overruns,
             _node: node,
         })
@@ -70,6 +96,17 @@ impl RtLoop {
 
             // 2. State estimation. No devices yet: measured = commanded (an ideal servo).
             let q_meas = q_prev;
+
+            // Mode commands from the supervisor, applied at the cycle boundary. We decide.
+            for req in self.link.commands.try_iter().take(MAX_COMMANDS_PER_CYCLE) {
+                let result = self.controller.command(req.cmd, &q_meas);
+                let mode = self.controller.mode();
+                let _ = self.link.outcomes.try_send(CommandOutcome {
+                    id: req.id,
+                    result,
+                    mode,
+                });
+            }
 
             // 3. Take the newest plan, if any, and sample the active one at `now`.
             match self.plans.latest() {
@@ -110,9 +147,11 @@ impl RtLoop {
             };
             let _ = self.state.publish(&state);
             stats.record(tick.latency_ns(), monotonic_ns() - now, tick.missed);
-            self.heartbeat.store(tick.index, Ordering::Release);
+            self.link.heartbeat.store(tick.index, Ordering::Release);
             if now - last_status_ns >= STATUS_PERIOD_NS {
-                let _ = self.status.publish(&Status { stats, last: state });
+                let status = Status { stats, last: state };
+                let _ = self.status.publish(&status);
+                let _ = self.link.status.try_send(status);
                 last_status_ns = now;
             }
         }

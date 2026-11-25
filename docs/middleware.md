@@ -81,18 +81,29 @@ trait Trigger {
 
 ## The supervisor thread
 
-The supervisor is `robotd`'s non-RT control plane. It is one normal-priority thread running an
-`epoll` loop over a `signalfd`, the session socket, a `timerfd` for health checks and the `eventfd`s of
-the topics it watches. Anything that blocks for a long time (disk, network) gets its own thread,
-which the supervisor starts and watches.
+The supervisor is `robotd`'s non-RT side and **its only external interface**. It is one
+normal-priority thread (the main thread). Its loop waits up to 1 ms for a command, then handles
+status, sessions, the bridge and health. Anything that blocks for a long time (disk) gets its own
+thread, which the supervisor starts and watches.
+
+```
+robotctl / policies / remote tools
+        │ Zenoh: commands (queries), sessions (liveliness), bridged topics
+        ▼
+supervisor ── in-process command queue ──▶ RT thread (decides, applies at a cycle boundary)
+           ◀── outcomes, status ───────────
+```
 
 - **Bring-up, in order:** load the setup, find devices, open transports, ping and configure them
   (limits, gains, servo return delay, torque off), create topics, start driver threads, set up
   the RT thread, then start the loop.
-- **Modes:** Init → Idle (torque off) → Hold → Running → Stopping → Fault. Requests arrive on a
-  command topic. The supervisor validates them and the RT thread applies them at a cycle boundary.
-- **Policy sessions** over a Unix socket (see Liveness below). It hands out the single plan-writer
-  role and frees it on disconnect.
+- **Modes:** robotd starts **Disabled** (torque off, once there are drivers). `enable` → Hold at
+  the measured pose; a valid plan → Running; the plan ending or `hold` → Hold; `stop` → Disabled.
+  Fault (repeated overruns, device error) is latched until restart. Commands arrive as Zenoh
+  queries; the supervisor forwards them in-process, the RT thread applies or refuses them at a cycle
+  boundary, and its verdict is the reply.
+- **Sessions:** clients announce themselves with Zenoh liveliness tokens. The supervisor lists them
+  in `status` and logs the moment one disappears (clean exit, crash or network loss).
 - **Health:** heartbeats from each driver thread, device status flags (overtemperature, overload,
   voltage), cycle timing, queue drop counters, USB unplug events, board temperature and throttling.
   It escalates in stages: warn, then degrade, then fault.
@@ -100,12 +111,16 @@ which the supervisor starts and watches.
   means Fault, because it can't be swapped out under the running loop.
 - **Recording:** a logger thread drains the telemetry and state queues to disk (MCAP, which
   Foxglove can open). This is also the source of episodes for `elbows_learn`.
-- **Bridges:** start and watch the Zenoh bridge that sends selected topics off the machine.
+- **Bridge:** `state` and `status` out to Zenoh; `plan` in from a remote policy (see Messaging).
 - **Shutdown:** on `SIGINT`/`SIGTERM` it requests a stop, waits for Hold, turns torque off, joins
   threads and releases its topics.
 - **systemd watchdog:** it sends `WATCHDOG=1` only while the RT heartbeat is advancing, so systemd
   restarts a hung `robotd`.
-- **Operator CLI:** `robotctl` talks to it over the same socket (status, enable, stop).
+- **Operator CLI:** `robotctl --robot NAME status|enable|hold|stop`, over Zenoh like any other
+  client. Without Zenoh, `SIGTERM` (or `systemctl stop`) still stops robotd cleanly; real safety
+  is the RT watchdog and the hardware e-stop, not any command path.
+- **RT stall:** if the RT heartbeat stops, the supervisor logs it and refuses commands. Not yet:
+  feeding the systemd watchdog only while the heartbeat advances.
 
 **The supervisor requests and the RT thread decides.** Safety never depends on the supervisor. If it
 hangs or dies, the RT thread still enforces limits and holds, then stops when plans go stale. The
@@ -121,8 +136,7 @@ instead of writing them ourselves.
 - **Between processes:** the `ipc` service variant (shared memory).
 - **Between threads in `robotd`:** also `ipc` for now, so tools like `robotctl` can read the same
   topics. iceoryx2's `local` variant (process memory, same API) is there if we need it.
-- **Off the host:** Zenoh (see below). This is planned: remote inference, monitoring and teleop will
-  need it.
+- **Off the host, and the control plane:** Zenoh (see below).
 
 ### Our layer on top
 
@@ -197,19 +211,35 @@ second, not both.
   policy crashed, hung or is slow: it holds either way.
 - **iceoryx2 cleans up dead nodes** when another node is created or a topic is opened. Tested: after
   a policy is SIGKILLed, a new one can take the single plan-publisher slot. A second `robotd` for the
-  same robot is refused (the state topic already has its publisher). A Unix socket session (with
-  `robotctl`) remains the plan for prompt disconnect events. Not yet tested: `robotd` restarting
-  under a running policy.
+  same robot is refused (the state topic already has its publisher). Zenoh liveliness gives prompt
+  disconnect events for clients connected through it. Not yet tested: `robotd` restarting under a
+  running policy.
 - **The RT thread creates its ports and locks memory before the loop starts.** Nothing is created or
   connected inside the loop.
 
-### Off the host: Zenoh
+### Zenoh: the control plane and off-host topics (`rt-net`)
 
-Remote inference on a GPU machine (or Modal), monitoring and teleop from a laptop, recording
-elsewhere, and multiple robots all need traffic to leave the robot. A bridge process republishes
-selected topics (listed in the setup file) over Zenoh, using the per-stream link choices in
-`realtime-control.md`. The bridge sits behind the same topic API, so nothing in `robotd` changes. To
-evaluate when we build it: iceoryx2's own Zenoh tunnel versus a bridge of our own.
+**Decision: Zenoh is robotd's control plane, locally and remotely, and carries every topic that
+leaves the host.** One mechanism serves `robotctl`, local policies and remote ones; a separate local
+socket protocol would have to be rebuilt for remote clients anyway. robotd listens on explicit
+endpoints (`[robotd.net] listen`, default `tcp/127.0.0.1:7447`; `tcp/0.0.0.0:7447` to accept other
+machines). Multicast discovery is off. Uses Zenoh's synchronous API; no async runtime in our code.
+
+```text
+elbows/<robot>/ctl/{status,enable,hold,stop}   queries robotd answers (JSON reply)
+elbows/<robot>/topic/<name>                    bridged topics: raw #[repr(C)] bytes, type name attached
+elbows/<robot>/session/<role>/<id>             liveliness tokens of connected clients
+```
+
+- **Commands** are Zenoh queries with JSON replies (`ok`, `message`, `status`), so the shell and
+  Python can use them too.
+- **Topics** carry the same `#[repr(C)]` messages as the local topics, as raw little-endian bytes
+  with the type name attached; a mismatch is refused and never reaches the RT thread.
+- **Bridge** (in the supervisor): `state` and `status` out; `plan` in. The bridge takes the local
+  single-publisher `plan` topic only while remote plans arrive, and releases it after 1 s idle, so
+  exactly one policy (local or remote) drives the robot at a time. A remote policy's plan times are
+  on the robot's clock: it estimates "now" as the last state's stamp plus the time since it arrived.
+- **Not yet:** access control (TLS, ACLs) for endpoints exposed beyond localhost; Python clients.
 
 ### First prototype
 
@@ -276,9 +306,11 @@ elbows_rt/                 Cargo workspace
   crates/
     rt-core/               Tick, Trigger, RT thread setup, timing stats
     rt-ipc/                Node/Publisher/Subscriber over iceoryx2 (topics are declared in rt-core)
-    rt-devices/            CyclicDevice/StreamDevice/Transport traits; drivers added per device
+    rt-net/                Zenoh: commands, sessions, off-host topics
+    rt-devices/            setup files, discovery, calibration; device traits; drivers per device
     robotd/                the main binary: config → devices → RT loop → supervisor
-    rt-py/                 PyO3 bindings: attach to topics, write plans, read state
+    robotctl/              operator CLI
+    rt-py/                 (planned) Python bindings: attach to topics, write plans, read state
 ```
 
 ## Status
@@ -288,15 +320,21 @@ Built in `elbows_rt/` and tested on macOS (no RT scheduling there), not yet on t
 - `rt-ipc`: typed topics over iceoryx2 (fan-out, history, drop-oldest, single publisher; tested).
 - `rt-core`: messages and topic declarations, `ClockTrigger`, RT thread setup, cycle stats, plan
   validation and sampling.
-- `rt-devices`: the traits only.
-- `robotd`: supervisor (signals, stall detection, status) plus the RT loop following plans with no
-  devices. `plan-demo` stands in for a policy.
+- `rt-net`: Zenoh keys, command protocol, wire encoding with type check.
+- `rt-devices`: setup files, serial-port discovery, calibration files, the device traits. No drivers.
+- `robotd`: supervisor (Zenoh commands and sessions, bridge, stall detection, signals) plus the RT
+  loop with modes, following plans with no devices. `plan-demo` stands in for a policy, locally or
+  remotely (`--remote`). `robotctl` sends commands.
+- Tested end to end: starts disabled and refuses plans; `enable` → Hold, then Running on plans;
+  `hold`/`stop`; a remote policy over Zenoh drives it through the bridge and shows as a session; a
+  local policy is refused while the remote one holds `plan`; killing the remote policy → Hold, the
+  session disappears, `plan` is released; an unreachable robot gives a clear error.
 - End to end at 500 Hz on a laptop: plans followed with none rejected; Hold when the policy is
   killed; a replacement policy takes over; a second `robotd` is refused. Wake-up latency p99
   < 0.5 ms, max ~2 ms, without RT scheduling.
 
-Next: the Feetech driver, the session socket and `robotctl`, Python bindings (`rt-py`), plan
-blending, recording, the device trigger and the Zenoh bridge.
+Next: the Feetech driver, Python clients (topics and Zenoh commands), plan blending, recording, the
+systemd watchdog, and the device trigger.
 
 ## Open questions
 

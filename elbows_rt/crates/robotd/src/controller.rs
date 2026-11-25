@@ -1,9 +1,25 @@
-//! Plan following: accept validated plans, sample the active one each cycle, hold when it ends.
-//! Runs on the RT thread: no allocation, no blocking.
+//! Modes and plan following: accept validated plans, sample the active one each cycle, hold when it
+//! ends. Runs on the RT thread: no allocation, no blocking.
+//!
+//! ```text
+//!            enable              valid plan
+//! Disabled ─────────▶ Hold ◀──────────────────▶ Running
+//!     ▲                │   plan ends / `hold`      │
+//!     └──── `stop` ────┴───────────────────────────┘
+//! any mode ── fault (overruns, device error) ──▶ Fault (latched until restart)
+//! ```
 //!
 //! Not yet: blending between plans (`realtime-control.md` suggests 50–100 ms) and velocity limits.
 
 use rt_core::msgs::{Joints, Mode, Plan, PlanError, PlanLimits};
+
+/// A mode change requested by the supervisor. The controller decides whether to apply it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeCommand {
+    Enable,
+    Hold,
+    Stop,
+}
 
 pub struct Controller {
     limits: PlanLimits,
@@ -17,17 +33,47 @@ impl Controller {
     pub fn new(limits: PlanLimits, initial: Joints) -> Self {
         Self {
             limits,
-            mode: Mode::Hold,
+            mode: Mode::Disabled,
             plan: None,
             target: initial,
             rejected: 0,
         }
     }
 
+    /// Apply a mode command, or say why not. `measured` is the current measured pose: enabling holds
+    /// where the arm actually is, so it never jumps.
+    pub fn command(&mut self, cmd: ModeCommand, measured: &Joints) -> Result<(), &'static str> {
+        match (cmd, self.mode) {
+            (_, Mode::Fault) => Err("fault latched; restart robotd"),
+            (ModeCommand::Enable, Mode::Disabled) => {
+                self.target = *measured;
+                self.mode = Mode::Hold;
+                Ok(())
+            }
+            (ModeCommand::Enable, _) => Ok(()),
+            (ModeCommand::Hold, Mode::Disabled) => Err("disabled; enable first"),
+            (ModeCommand::Hold, _) => {
+                self.plan = None;
+                self.mode = Mode::Hold;
+                Ok(())
+            }
+            (ModeCommand::Stop, _) => {
+                self.plan = None;
+                self.mode = Mode::Disabled;
+                Ok(())
+            }
+        }
+    }
+
     /// Offer a plan from the policy. Invalid plans are counted and ignored; the old one keeps running.
     pub fn offer(&mut self, plan: &Plan, now_ns: u64) -> Result<(), PlanError> {
-        if self.mode == Mode::Fault {
-            return Ok(());
+        match self.mode {
+            Mode::Fault => return Ok(()), // latched: ignore quietly
+            Mode::Disabled => {
+                self.reject();
+                return Err(PlanError::NotEnabled);
+            }
+            Mode::Hold | Mode::Running => {}
         }
         if let Err(e) = plan.validate(now_ns, &self.target, &self.limits) {
             self.reject();
@@ -57,7 +103,7 @@ impl Controller {
         self.target
     }
 
-    /// Latch Fault: hold the current target and ignore plans until restart.
+    /// Latch Fault: hold the current target and ignore plans and commands until restart.
     pub fn fault(&mut self) {
         self.mode = Mode::Fault;
         self.plan = None;
@@ -83,6 +129,7 @@ mod tests {
     use rt_core::msgs::DOF;
 
     const MS: u64 = 1_000_000;
+    const ZERO: Joints = [0.0; DOF];
 
     fn limits() -> PlanLimits {
         PlanLimits {
@@ -100,10 +147,37 @@ mod tests {
         p
     }
 
+    fn enabled() -> Controller {
+        let mut c = Controller::new(limits(), ZERO);
+        c.command(ModeCommand::Enable, &ZERO).unwrap();
+        c
+    }
+
+    #[test]
+    fn starts_disabled_and_refuses_plans() {
+        let mut c = Controller::new(limits(), ZERO);
+        assert_eq!(c.mode(), Mode::Disabled);
+        assert_eq!(
+            c.offer(&plan(1, 100 * MS, 0.2), 100 * MS),
+            Err(PlanError::NotEnabled)
+        );
+        assert_eq!(
+            c.command(ModeCommand::Hold, &ZERO),
+            Err("disabled; enable first")
+        );
+        assert_eq!(c.rejected(), 1);
+    }
+
+    #[test]
+    fn enable_holds_the_measured_pose() {
+        let mut c = Controller::new(limits(), ZERO);
+        c.command(ModeCommand::Enable, &[0.1; DOF]).unwrap();
+        assert_eq!((c.mode(), c.step(0)), (Mode::Hold, [0.1; DOF]));
+    }
+
     #[test]
     fn follows_then_holds() {
-        let mut c = Controller::new(limits(), [0.0; DOF]);
-        assert_eq!(c.step(0), [0.0; DOF]);
+        let mut c = enabled();
         c.offer(&plan(1, 100 * MS, 0.2), 100 * MS).unwrap();
         assert_eq!(c.mode(), Mode::Running);
         assert!((c.step(105 * MS)[0] - 0.1).abs() < 1e-6);
@@ -113,8 +187,20 @@ mod tests {
     }
 
     #[test]
+    fn hold_and_stop_drop_the_plan() {
+        let mut c = enabled();
+        c.offer(&plan(1, 100 * MS, 0.2), 100 * MS).unwrap();
+        c.step(105 * MS);
+        c.command(ModeCommand::Hold, &ZERO).unwrap();
+        let held = c.step(110 * MS);
+        assert_eq!((c.mode(), c.step(200 * MS)), (Mode::Hold, held));
+        c.command(ModeCommand::Stop, &ZERO).unwrap();
+        assert_eq!(c.mode(), Mode::Disabled);
+    }
+
+    #[test]
     fn rejects_bad_plans_and_keeps_old_one() {
-        let mut c = Controller::new(limits(), [0.0; DOF]);
+        let mut c = enabled();
         c.offer(&plan(1, 100 * MS, 0.2), 100 * MS).unwrap();
         let mut bad = plan(2, 100 * MS, 0.2);
         bad.q[0] = [2.0; DOF]; // jump
@@ -124,10 +210,12 @@ mod tests {
 
     #[test]
     fn fault_latches() {
-        let mut c = Controller::new(limits(), [0.0; DOF]);
+        let mut c = enabled();
         c.fault();
         c.offer(&plan(1, 100 * MS, 0.2), 100 * MS).unwrap();
         assert_eq!(c.mode(), Mode::Fault);
-        assert_eq!(c.step(105 * MS), [0.0; DOF]);
+        assert_eq!(c.step(105 * MS), ZERO);
+        assert!(c.command(ModeCommand::Enable, &ZERO).is_err());
+        assert!(c.command(ModeCommand::Stop, &ZERO).is_err());
     }
 }

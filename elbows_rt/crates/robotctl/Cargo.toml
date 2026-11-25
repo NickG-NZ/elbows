@@ -1,6 +1,6 @@
 [package]
 name = "robotctl"
-description = "Operator CLI: device discovery now; robotd status and control later"
+description = "Operator CLI: robotd commands over Zenoh, device discovery"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,8 @@ publish.workspace = true
 
 [dependencies]
 rt-devices.workspace = true
+rt-net.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

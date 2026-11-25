@@ -57,6 +57,8 @@ pub enum PlanError {
     Jump,
     #[error("plan already over")]
     Expired,
+    #[error("robot not enabled")]
+    NotEnabled,
 }
 
 impl Plan {
@@ -123,19 +125,30 @@ impl Plan {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Holding the last target. The start state, and where a finished or stale plan ends up.
-    Hold = 0,
+    /// Not commanding the arm (torque off, once there are drivers). The start state; `enable` leaves it.
+    Disabled = 0,
+    /// Holding the last target. Where `enable` and a finished or stale plan end up.
+    Hold = 1,
     /// Following a plan.
-    Running = 1,
+    Running = 2,
     /// Latched after a fault (e.g. repeated overruns, device error). Needs a restart for now.
-    Fault = 2,
+    Fault = 3,
 }
 
 impl Mode {
     pub fn from_u32(v: u32) -> Option<Self> {
-        [Mode::Hold, Mode::Running, Mode::Fault]
+        [Mode::Disabled, Mode::Hold, Mode::Running, Mode::Fault]
             .into_iter()
             .find(|m| *m as u32 == v)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Disabled => "disabled",
+            Mode::Hold => "hold",
+            Mode::Running => "running",
+            Mode::Fault => "fault",
+        }
     }
 }
 

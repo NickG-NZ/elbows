@@ -18,6 +18,7 @@
 
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::sync::Once;
 
 use bytemuck::Pod;
 use iceoryx2::port::publisher::Publisher as IoxPublisher;
@@ -67,6 +68,10 @@ impl Node {
     /// `namespace` prefixes every topic (normally the robot name); `name` identifies this node in
     /// iceoryx2's tooling (`iox2 node list`).
     pub fn new(namespace: &str, name: &str) -> Result<Self, IpcError> {
+        // iceoryx2 logs routine events (dead-node cleanup, default config) as warnings with large
+        // dumps. Errors only, unless IOX2_LOG_LEVEL says otherwise.
+        static QUIET: Once = Once::new();
+        QUIET.call_once(|| set_log_level_from_env_or(LogLevel::Error));
         let node_name = NodeName::new(name).map_err(setup(format!("node name {name:?}")))?;
         let node = NodeBuilder::new()
             .name(&node_name)

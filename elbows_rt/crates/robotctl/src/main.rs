@@ -1,9 +1,13 @@
-//! Operator CLI. Device discovery now; robotd status, enable/stop and calibration later.
+//! Operator CLI.
 //!
 //! ```text
+//! robotctl --robot NAME status|enable|hold|stop [--connect ENDPOINT] [--json]
 //! robotctl devices list                          connected serial ports and their USB serial numbers
 //! robotctl devices port --setup DIR <device>     current port of a device in a robot setup
 //! ```
+//!
+//! Commands go to robotd over Zenoh (default endpoint `tcp/127.0.0.1:7447`); robotd's RT thread
+//! decides whether to apply them, and its answer is printed. Exits non-zero if refused or unreachable.
 //!
 //! e.g. for LeRobot bring-up:
 //! `lerobot-calibrate … --robot.port=$(robotctl devices port --setup hardware/setups/so101 arm)`
@@ -12,8 +16,10 @@ use std::process::ExitCode;
 
 use rt_devices::serial_ports;
 use rt_devices::setup::Setup;
+use rt_net::{Command, NetConfig, Reply};
 
 const USAGE: &str = "usage:
+  robotctl --robot NAME status|enable|hold|stop [--connect ENDPOINT] [--json]
   robotctl devices list
   robotctl devices port --setup DIR DEVICE";
 
@@ -28,7 +34,7 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             Ok(())
         }
-        _ => Err(USAGE.to_string()),
+        rest => command(rest),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -37,6 +43,58 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn command(args: &[&str]) -> Result<(), String> {
+    let (mut robot, mut endpoint, mut json, mut cmd) =
+        (None, rt_net::DEFAULT_ENDPOINT, false, None);
+    let mut it = args.iter();
+    while let Some(&a) = it.next() {
+        match a {
+            "--robot" => robot = it.next().copied(),
+            "--connect" => endpoint = it.next().copied().ok_or("--connect needs an endpoint")?,
+            "--json" => json = true,
+            _ => cmd = Some(Command::parse(a).ok_or(format!("unknown command {a:?}\n{USAGE}"))?),
+        }
+    }
+    let robot = robot.ok_or(format!("--robot is required\n{USAGE}"))?;
+    let cmd = cmd.ok_or(USAGE)?;
+    let session = rt_net::open(&NetConfig::client(endpoint)).map_err(|e| e.to_string())?;
+    let reply = rt_net::request(&session, robot, cmd).map_err(|e| e.to_string())?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&reply).expect("reply serializes")
+        );
+    } else {
+        print_reply(&reply);
+    }
+    if reply.ok { Ok(()) } else { Err(reply.message) }
+}
+
+fn print_reply(r: &Reply) {
+    if !r.message.is_empty() && r.ok {
+        println!("{}", r.message);
+    }
+    let s = &r.status;
+    println!("mode      {}", s.mode);
+    println!(
+        "plan      seq {}, {} rejected",
+        s.plan_seq, s.plans_rejected
+    );
+    println!("cycles    {} ({} missed)", s.cycles, s.missed);
+    println!(
+        "latency   p99 <{} µs, max {} µs; exec p99 <{} µs",
+        s.latency_p99_us, s.latency_max_us, s.exec_p99_us
+    );
+    println!(
+        "sessions  {}",
+        if s.sessions.is_empty() {
+            "none".into()
+        } else {
+            s.sessions.join(", ")
+        }
+    );
 }
 
 fn list() -> Result<(), String> {

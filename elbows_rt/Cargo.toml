@@ -12,16 +12,19 @@ publish = false
 rt-core = { path = "crates/rt-core" }
 rt-ipc = { path = "crates/rt-ipc" }
 rt-devices = { path = "crates/rt-devices" }
+rt-net = { path = "crates/rt-net" }
 bytemuck = { version = "1.16", features = ["derive", "min_const_generics"] }
 iceoryx2 = "0.10.1"
 iceoryx2-bb-derive-macros = "0.10.1"
 iceoryx2-bb-elementary-traits = "0.10.1"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serialport = "4.10"
 signal-hook = "0.3"
 thiserror = "2"
 toml = "0.8"
+zenoh = "1.10.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

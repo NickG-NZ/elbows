@@ -8,8 +8,8 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
   Only `backends/` may import a simulator; new backends must pass `tests/test_backend_contract.py`.
 - `elbows_learn/`: training. Generic methods plus `recipes/` (how to learn a given task). Depends on
   `elbows_sim`, never the reverse (`elbows_sim/tests/test_layering.py`).
-- `elbows_rt/`: Rust real-time runtime: `robotd`, topics over iceoryx2, device drivers and discovery
-  (`rt-devices`), `robotctl`. Design in `docs/middleware.md`. The RT thread never allocates, locks,
+- `elbows_rt/`: Rust real-time runtime: `robotd`, local topics over iceoryx2, commands and off-host
+  topics over Zenoh, device drivers and discovery (`rt-devices`), `robotctl`. Design in `docs/middleware.md`. The RT thread never allocates, locks,
   logs or blocks.
 - `hardware/`: setup notes, robot setups (`hardware/setups/<setup>/`) and calibration. Python
   calibration procedures in `hardware/src/hardware/`. Setups and calibration data are local, not

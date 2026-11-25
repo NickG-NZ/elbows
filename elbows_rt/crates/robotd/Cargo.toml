@@ -11,10 +11,13 @@ publish.workspace = true
 rt-core.workspace = true
 rt-ipc.workspace = true
 rt-devices.workspace = true
+rt-net.workspace = true
 bytemuck.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 signal-hook.workspace = true
 toml.workspace = true
+zenoh.workspace = true
 
 [lints]
 workspace = true

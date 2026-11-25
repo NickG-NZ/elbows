@@ -11,6 +11,10 @@
 //! lock_memory = true
 //! required = true          # fail rather than run without RT scheduling
 //!
+//! [robotd.net]
+//! listen = ["tcp/127.0.0.1:7447"]   # Zenoh endpoints for commands and remote policies;
+//!                                   # e.g. "tcp/0.0.0.0:7447" to accept other machines
+//!
 //! [robotd.plan]
 //! max_obs_age_ms = 500
 //! max_jump_rad = 0.3
@@ -32,6 +36,21 @@ pub struct Config {
     pub max_consecutive_overruns: u32,
     pub rt: RtSection,
     pub plan: PlanSection,
+    pub net: NetSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NetSection {
+    pub listen: Vec<String>,
+}
+
+impl Default for NetSection {
+    fn default() -> Self {
+        Self {
+            listen: vec![rt_net::DEFAULT_ENDPOINT.to_string()],
+        }
+    }
 }
 
 impl Default for Config {
@@ -41,6 +60,7 @@ impl Default for Config {
             max_consecutive_overruns: 10,
             rt: RtSection::default(),
             plan: PlanSection::default(),
+            net: NetSection::default(),
         }
     }
 }
