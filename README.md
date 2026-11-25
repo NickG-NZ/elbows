@@ -7,6 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg?logo=python&logoColor=white">
+  <img alt="Rust 1.89+" src="https://img.shields.io/badge/rust-1.89%2B-CE422B.svg?logo=rust&logoColor=white">
   <img alt="PyTorch 2.4+" src="https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C.svg?logo=pytorch&logoColor=white">
   <img alt="MuJoCo 3.3+" src="https://img.shields.io/badge/MuJoCo-3.3%2B-0B5FFF.svg">
   <img alt="Platform: macOS | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg">
