@@ -1,0 +1,17 @@
+# Format example, read by both the Python (hardware/tests) and Rust (rt-devices) tests so the two
+# readers can't drift apart. Not real calibration data.
+
+[calibration]
+kind = "example"                  # what [data] holds; each kind defines its own layout
+version = 1                       # version of that kind's [data] layout
+device = "arm"                    # device name in the setup's setup.toml
+serial = "5C93150591"             # the physical unit measured (optional for in-situ calibration)
+created = 2026-11-25T10:00:00Z
+method = "format example"
+
+[calibration.quality]             # optional numbers describing how good the result is
+residual_rms = 0.5
+
+[data]
+joints = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+offset = [2048, 2048, 2048, 2048, 2048, 2048]

@@ -2,11 +2,11 @@
 //!
 //! ```text
 //! robotctl devices list                          connected serial ports and their USB serial numbers
-//! robotctl devices port --setup FILE <device>    current port of a device in a robot setup file
+//! robotctl devices port --setup DIR <device>     current port of a device in a robot setup
 //! ```
 //!
 //! e.g. for LeRobot bring-up:
-//! `lerobot-calibrate … --robot.port=$(robotctl devices port --setup hardware/setups/so101.toml arm)`
+//! `lerobot-calibrate … --robot.port=$(robotctl devices port --setup hardware/setups/so101 arm)`
 
 use std::process::ExitCode;
 
@@ -15,7 +15,7 @@ use rt_devices::setup::Setup;
 
 const USAGE: &str = "usage:
   robotctl devices list
-  robotctl devices port --setup FILE DEVICE";
+  robotctl devices port --setup DIR DEVICE";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

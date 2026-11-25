@@ -1,7 +1,8 @@
 # SO-101
 
 Everything that describes the SO-101 arm (any unit, not one in particular). Per-unit values, such as
-system-identified friction or calibration, belong in that rig's `hardware/setups/<setup>.toml`.
+system-identified friction or calibration, belong in `hardware/` calibration: per unit under
+`hardware/devices/<serial>/`, per rig under `hardware/setups/<setup>/calibration/` (see `hardware/README.md`).
 
 | Path | What | Source |
 |---|---|---|

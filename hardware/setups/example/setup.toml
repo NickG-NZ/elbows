@@ -1,0 +1,9 @@
+# One directory per robot setup (a physical rig): copy this directory to hardware/setups/<setup>/,
+# which is not committed, and pass that directory to tools with --setup. A different robot is a
+# different directory. Its calibration/ subdirectory holds this rig's in-situ calibration.
+#
+# One table per device on this rig, named however you like; keys are whatever its driver needs.
+# USB serials: `robotctl devices list` shows those of connected boards (see hardware/README.md).
+
+[arm]  # SO-101 follower servo bus
+usb_serial = "5C93150591"

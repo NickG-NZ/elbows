@@ -17,31 +17,53 @@ SO101 bring-up, following the [LeRobot SO-101 guide](https://huggingface.co/docs
 We have a follower arm only (no leader, so no teleoperation).
 
 ```bash
-PORT=$(robotctl devices port --setup hardware/setups/so101.toml arm)      # see Serial ports
+PORT=$(robotctl devices port --setup hardware/setups/so101 arm)           # see Serial ports
 uv run lerobot-setup-motors --robot.type=so101_follower --robot.port=$PORT   # once, assigns motor IDs
 uv run lerobot-calibrate --robot.type=so101_follower --robot.port=$PORT --robot.id=follower
 ```
 
 ### Serial ports
 
-Each robot setup (a physical rig) has its own file, `hardware/setups/<setup>.toml`, listing its
-devices and what their drivers need. Setup files are local, not committed; pass one with `--setup`
-to point the same code at a different robot. Serial devices are found by USB serial number, which is
+Each robot setup (a physical rig) has its own directory, `hardware/setups/<setup>/`, whose
+`setup.toml` lists its devices and what their drivers need. Setups are local, not committed; pass one
+with `--setup` to point the same code at a different robot. Serial devices are found by USB serial number, which is
 the same on every OS, USB socket and replug (the port path is not: `/dev/cu.usbmodem…` on macOS,
 `/dev/ttyACM0`/`ACM1` in plug order on Linux).
 
 ```bash
 cargo install --path elbows_rt/crates/robotctl                    # once: puts robotctl on your PATH
-cp hardware/setups/example.toml hardware/setups/so101.toml
+cp -r hardware/setups/example hardware/setups/so101
 robotctl devices list                                             # connected ports and USB serials
-robotctl devices port --setup hardware/setups/so101.toml arm      # current port of a device
+robotctl devices port --setup hardware/setups/so101 arm           # current port of a device
 ```
 
 On Linux, add yourself to the `dialout` group to open serial ports without sudo
 (`sudo usermod -aG dialout $USER`, then log in again).
 
-Calibration is saved under `~/.cache/huggingface/lerobot/calibration/`, keyed by `id`. Reuse the
-same `id` every time. Not yet tested on our arm.
+LeRobot saves its calibration under `~/.cache/huggingface/lerobot/calibration/`, keyed by `id`.
+Reuse the same `id` every time. Not yet tested on our arm.
+
+## Calibration
+
+Our own calibration, for `robotd` and its drivers. Two kinds, stored by what they're tied to:
+
+| | Characterization | In-situ |
+|---|---|---|
+| Describes | one physical unit | one rig, as assembled |
+| Examples | camera intrinsics, IMU bias and noise, motor parameters | joint offsets and ranges, camera mounting pose |
+| Valid until | the unit is changed or damaged | the rig is reassembled or bumped |
+| Stored in | `hardware/devices/<serial>/<kind>.toml` | `hardware/setups/<setup>/calibration/<device>/<kind>.toml` |
+
+Calibration data is local, never committed. Each file is a `[calibration]` header (kind, `[data]`
+layout version, device, optional serial, time, method, optional quality numbers) plus a `[data]` table
+whose layout the kind defines. [`tests/fixtures/example_calibration.toml`](tests/fixtures/example_calibration.toml)
+shows the format.
+
+- Procedures are Python, in `src/hardware/` (`Calibration`, `Setup`). Procedures that need the live
+  arm will drive it through `robotd` once it has a Feetech driver.
+- Drivers read the same files with `rt-devices`' `calibration` module, and refuse a kind or layout
+  version they don't understand. Both readers test against the example file above.
+- No procedures exist yet; joint offsets and ranges for the SO-101 come first.
 
 ## Camera discovery
 

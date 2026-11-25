@@ -244,7 +244,7 @@ trait StreamDevice: Send {
   priority set in config. They stamp each sample with `CLOCK_MONOTONIC` at capture (or with the
   device's hardware timestamp, mapped to it) and publish. An INS can also provide the
   `DeviceTrigger`.
-- **Configuration** comes from the existing `hardware/setups/<setup>.toml` (one table per device),
+- **Configuration** comes from the robot's `hardware/setups/<setup>/setup.toml` (one table per device),
   shared by `robotd`, `robotctl` and calibration tools. `rt-devices` finds a device's port from its
   USB serial number (`robotctl devices list/port`).
 - **A sim device** (later) implements `CyclicDevice` by stepping MuJoCo. The same loop, timing and

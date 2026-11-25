@@ -11,8 +11,9 @@ This file is the shared agent guide; `CLAUDE.md` is a symlink to it, so edit `AG
 - `elbows_rt/`: Rust real-time runtime: `robotd`, topics over iceoryx2, device drivers and discovery
   (`rt-devices`), `robotctl`. Design in `docs/middleware.md`. The RT thread never allocates, locks,
   logs or blocks.
-- `hardware/`: setup notes, per-robot setup files (`hardware/setups/<setup>.toml`, local, not
-  committed) and calibration.
+- `hardware/`: setup notes, robot setups (`hardware/setups/<setup>/`) and calibration. Python
+  calibration procedures in `hardware/src/hardware/`. Setups and calibration data are local, not
+  committed.
 - `autoresearch/`: parallel autonomous research loops. If you were launched as a lane, follow
   `autoresearch/program.md` exactly; it overrides general guidance here.
 - `infra/cloud/`: cloud environment setup script, SessionStart hook, network allowlist.

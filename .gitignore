@@ -14,8 +14,9 @@ autoresearch/tasks/*/artifacts/
 autoresearch/tasks/*/run.log
 # training runs
 runs/
-# robot setups: local device config (serials, addresses); only the template is committed
+# robot setups and calibration: local (serials, addresses, calibration data); only the template is committed
 hardware/setups/*
-!hardware/setups/example.toml
+!hardware/setups/example/
+hardware/devices/
 # Rust (elbows_rt)
 elbows_rt/target/

@@ -1,5 +1,5 @@
-//! `robotd` settings: the `[robotd]` table of the robot's setup file
-//! (`hardware/setups/<setup>.toml`). Other tables in that file belong to device drivers.
+//! `robotd` settings: the `[robotd]` table of the robot's `setup.toml`
+//! (`hardware/setups/<setup>/setup.toml`). Other tables in that file belong to device drivers.
 //!
 //! ```toml
 //! [robotd]
@@ -81,6 +81,7 @@ impl Config {
         let Some(path) = setup else {
             return Ok(Self::default());
         };
+        let path = &rt_devices::setup::setup_file(path);
         #[derive(Deserialize)]
         struct SetupFile {
             robotd: Option<Config>,

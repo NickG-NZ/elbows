@@ -8,7 +8,7 @@
 //! - `<robot>/state`  — the RT thread publishes every cycle; policies, loggers, viewers subscribe
 //! - `<robot>/status` — the RT thread publishes ~10 Hz; the supervisor (and later `robotctl`) subscribe
 //!
-//! Usage: `robotd --robot so101 [--setup hardware/setups/so101.toml] [--rate-hz 200]`
+//! Usage: `robotd --robot so101 [--setup hardware/setups/so101] [--rate-hz 200]`
 
 mod config;
 mod controller;
@@ -70,7 +70,7 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-const USAGE: &str = "usage: robotd --robot NAME [--setup FILE] [--rate-hz HZ]";
+const USAGE: &str = "usage: robotd --robot NAME [--setup DIR] [--rate-hz HZ]";
 
 fn main() -> ExitCode {
     match run() {

@@ -1,8 +1,9 @@
 //! Devices: setup files, discovery, and the device and transport traits. Drivers live in their own
 //! modules here (e.g. `feetech/`), one per protocol; none are implemented yet.
 //!
-//! - [`setup`]: robot setup files (`hardware/setups/<setup>.toml`), one table per device.
+//! - [`setup`]: robot setups (`hardware/setups/<setup>/setup.toml`), one table per device.
 //! - [`serial_ports`]: find a serial device's current port from its USB serial number.
+//! - [`calibration`]: calibration files (in-situ per rig, characterization per unit).
 //!
 //! Two kinds of device, because they relate to the RT loop differently:
 //! - [`CyclicDevice`]: on the control bus, exchanged inside every RT cycle at a fixed phase
@@ -18,6 +19,7 @@ use std::time::Duration;
 
 use rt_core::trigger::Tick;
 
+pub mod calibration;
 pub mod serial_ports;
 pub mod setup;
 

@@ -713,6 +713,7 @@ name = "rt-devices"
 version = "0.1.0"
 dependencies = [
  "rt-core",
+ "serde",
  "serialport",
  "thiserror",
  "toml 0.8.23",
