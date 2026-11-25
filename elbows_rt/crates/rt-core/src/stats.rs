@@ -10,7 +10,7 @@ pub const BUCKETS: usize = 24;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable, ZeroCopySend)]
-#[type_name("elbows.Histogram")]
+#[type_name("elbows.Histogram/1")]
 pub struct Histogram {
     pub counts: [u64; BUCKETS],
     pub max_ns: u64,
@@ -48,7 +48,7 @@ impl Histogram {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable, ZeroCopySend)]
-#[type_name("elbows.CycleStats")]
+#[type_name("elbows.CycleStats/1")]
 pub struct CycleStats {
     pub cycles: u64,
     /// Cycles skipped because a previous one overran.

@@ -1,55 +1,49 @@
-//! Zenoh: robotd's control plane (commands, sessions) and topics that leave the host.
+//! Zenoh transport: generic pub/sub and request/response for anything declared in `rt_core`
+//! (`topics`, `services`). Knows nothing about particular messages or services.
 //!
-//! On the robot's host, data flows over iceoryx2 (`rt-ipc`); Zenoh carries what crosses a process's
-//! trust or machine boundary. Uses Zenoh's synchronous API only, so callers need no async runtime.
+//! On the robot's host, topics flow over iceoryx2 (`rt-ipc`); Zenoh carries what crosses a process's
+//! trust or machine boundary: services (commands), sessions, and topics bridged off the host. Uses
+//! Zenoh's synchronous API only, so callers need no async runtime.
 //!
 //! ```text
-//! elbows/<robot>/ctl/<command>          queryables served by robotd: status, enable, hold, stop
-//! elbows/<robot>/topic/<name>           bridged topics: raw #[repr(C)] bytes, type name attached
-//! elbows/<robot>/session/<role>/<id>    liveliness tokens of connected clients (e.g. policies)
+//! elbows/<robot>/topic/<name>           topics, encoded by a Codec (raw bytes by default)
+//! elbows/<robot>/srv/<name>             services: JSON request → JSON response
+//! elbows/<robot>/session/<role>/<id>    liveliness tokens of connected clients
 //! ```
-//!
-//! Commands and replies are JSON, so the shell and Python can use them too.
 
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use bytemuck::Pod;
-use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+use rt_core::services::Service;
 use rt_core::topics::Topic;
-use serde::{Deserialize, Serialize};
+use rt_core::{Message, type_name};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use zenoh::Wait;
 use zenoh::handlers::FifoChannelHandler;
 use zenoh::liveliness::LivelinessToken;
+use zenoh::query::{Query, Queryable};
 use zenoh::sample::Sample;
 
 pub use zenoh::Session;
 
 /// Where robotd listens and clients connect, unless configured otherwise.
 pub const DEFAULT_ENDPOINT: &str = "tcp/127.0.0.1:7447";
-/// How long a client waits for robotd to answer a command.
-pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long a client waits for a service reply.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 const ROOT: &str = "elbows";
 
 #[derive(Debug, thiserror::Error)]
 pub enum NetError {
     #[error("zenoh: {0}")]
     Zenoh(String),
-    #[error(
-        "no reply from robotd for {robot} (is it running and reachable at the configured endpoint?)"
-    )]
-    NoReply { robot: String },
-    #[error("bad reply: {0}")]
-    BadReply(String),
-    #[error(
-        "message type mismatch: got {got:?} ({got_len} bytes), expected {expected:?} ({expected_len} bytes)"
-    )]
-    TypeMismatch {
-        got: String,
-        got_len: usize,
-        expected: &'static str,
-        expected_len: usize,
-    },
+    #[error("no reply to {key} (is robotd running and reachable at the configured endpoint?)")]
+    NoReply { key: String },
+    #[error("{key}: {msg}")]
+    Remote { key: String, msg: String },
+    #[error("decode: {0}")]
+    Decode(String),
 }
 
 fn zerr(e: impl std::fmt::Display) -> NetError {
@@ -58,16 +52,12 @@ fn zerr(e: impl std::fmt::Display) -> NetError {
 
 // ---- Keys ----------------------------------------------------------------------------------------
 
-pub fn ctl_key(robot: &str, command: Command) -> String {
-    format!("{ROOT}/{robot}/ctl/{}", command.name())
-}
-
-pub fn ctl_wildcard(robot: &str) -> String {
-    format!("{ROOT}/{robot}/ctl/*")
-}
-
 pub fn topic_key<T>(robot: &str, topic: &Topic<T>) -> String {
     format!("{ROOT}/{robot}/topic/{}", topic.name)
+}
+
+pub fn service_key<Req, Resp>(robot: &str, service: &Service<Req, Resp>) -> String {
+    format!("{ROOT}/{robot}/srv/{}", service.name)
 }
 
 pub fn session_key(robot: &str, role: &str, id: &str) -> String {
@@ -128,120 +118,76 @@ pub fn declare_session(
     session.liveliness().declare_token(key).wait().map_err(zerr)
 }
 
-// ---- Commands ------------------------------------------------------------------------------------
+// ---- Codecs --------------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Command {
-    Status,
-    Enable,
-    Hold,
-    Stop,
+/// How a topic's messages become bytes on the network. Publishers, subscribers and bridges are
+/// generic over it, so a topic can switch encoding (e.g. to protobuf, for clients in other
+/// languages) without touching anything else.
+pub trait Codec<T> {
+    fn encode(value: &T) -> Vec<u8>;
+    fn decode(bytes: &[u8]) -> Result<T, NetError>;
 }
 
-impl Command {
-    pub const ALL: [Command; 4] = [
-        Command::Status,
-        Command::Enable,
-        Command::Hold,
-        Command::Stop,
-    ];
+/// The message's own `#[repr(C)]` bytes, prefixed by its versioned type name (`elbows.Plan/1\0`),
+/// so a peer built from a different layout is refused rather than misread. Little-endian.
+pub struct Raw;
 
-    pub fn name(self) -> &'static str {
-        match self {
-            Command::Status => "status",
-            Command::Enable => "enable",
-            Command::Hold => "hold",
-            Command::Stop => "stop",
+impl<T: Message> Codec<T> for Raw {
+    fn encode(value: &T) -> Vec<u8> {
+        let name = type_name::<T>().as_bytes();
+        let mut out = Vec::with_capacity(name.len() + 1 + size_of::<T>());
+        out.extend_from_slice(name);
+        out.push(0);
+        out.extend_from_slice(bytemuck::bytes_of(value));
+        out
+    }
+
+    fn decode(bytes: &[u8]) -> Result<T, NetError> {
+        let split = bytes
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or(NetError::Decode("no type name".into()))?;
+        let (name, body) = (&bytes[..split], &bytes[split + 1..]);
+        if name != type_name::<T>().as_bytes() || body.len() != size_of::<T>() {
+            return Err(NetError::Decode(format!(
+                "got {:?} ({} bytes), expected {:?} ({} bytes)",
+                String::from_utf8_lossy(name),
+                body.len(),
+                type_name::<T>(),
+                size_of::<T>()
+            )));
         }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|c| c.name() == s)
-    }
-
-    /// The command a `ctl/<command>` key addresses.
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::parse(key.rsplit('/').next()?)
+        Ok(bytemuck::pod_read_unaligned(body))
     }
 }
 
-/// robotd's answer to every command.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Reply {
-    /// Whether the command was carried out (`status` always is).
-    pub ok: bool,
-    /// Why not, or what happened.
-    pub message: String,
-    pub status: StatusReport,
-}
+/// JSON, for services (and any topic that should be readable by anything).
+pub struct Json;
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct StatusReport {
-    pub mode: String,
-    pub plan_seq: u64,
-    pub plans_rejected: u32,
-    pub cycles: u64,
-    pub missed: u64,
-    pub latency_p99_us: u64,
-    pub latency_max_us: u64,
-    pub exec_p99_us: u64,
-    /// Connected clients, as `<role>/<id>`.
-    pub sessions: Vec<String>,
-}
+impl<T: Serialize + DeserializeOwned> Codec<T> for Json {
+    fn encode(value: &T) -> Vec<u8> {
+        serde_json::to_vec(value).expect("serializable")
+    }
 
-/// Send `command` to the robotd for `robot` and wait for its reply.
-pub fn request(session: &Session, robot: &str, command: Command) -> Result<Reply, NetError> {
-    let replies = session
-        .get(ctl_key(robot, command))
-        .timeout(COMMAND_TIMEOUT)
-        .wait()
-        .map_err(zerr)?;
-    let reply = replies.recv().map_err(|_| NetError::NoReply {
-        robot: robot.into(),
-    })?;
-    let sample = reply
-        .into_result()
-        .map_err(|e| NetError::BadReply(format!("{:?}", e.payload().try_to_string())))?;
-    serde_json::from_slice(&sample.payload().to_bytes())
-        .map_err(|e| NetError::BadReply(e.to_string()))
+    fn decode(bytes: &[u8]) -> Result<T, NetError> {
+        // An empty payload is `null`, i.e. `()` for requests without arguments.
+        let bytes = if bytes.is_empty() {
+            b"null".as_slice()
+        } else {
+            bytes
+        };
+        serde_json::from_slice(bytes).map_err(|e| NetError::Decode(e.to_string()))
+    }
 }
 
 // ---- Topics --------------------------------------------------------------------------------------
 
-/// A message that can cross the network: plain data with a stable type name. The same types as
-/// `rt-ipc` topics, sent as raw little-endian bytes.
-pub trait WireMessage: Pod + ZeroCopySend {}
-impl<T: Pod + ZeroCopySend> WireMessage for T {}
-
-fn type_name<T: WireMessage>() -> &'static str {
-    // SAFETY: only reads the type's declared name.
-    unsafe { <T as ZeroCopySend>::type_name() }
-}
-
-pub fn encode<T: WireMessage>(value: &T) -> (Vec<u8>, &'static str) {
-    (bytemuck::bytes_of(value).to_vec(), type_name::<T>())
-}
-
-pub fn decode<T: WireMessage>(payload: &[u8], attachment: Option<&[u8]>) -> Result<T, NetError> {
-    let got = attachment.map(String::from_utf8_lossy).unwrap_or_default();
-    if got != type_name::<T>() || payload.len() != size_of::<T>() {
-        return Err(NetError::TypeMismatch {
-            got: got.into_owned(),
-            got_len: payload.len(),
-            expected: type_name::<T>(),
-            expected_len: size_of::<T>(),
-        });
-    }
-    Ok(bytemuck::pod_read_unaligned(payload))
-}
-
-pub struct NetPublisher<T> {
+pub struct NetPublisher<T, C = Raw> {
     publisher: zenoh::pubsub::Publisher<'static>,
-    _msg: PhantomData<fn(T)>,
+    _types: PhantomData<fn(T, C)>,
 }
 
-impl<T: WireMessage> NetPublisher<T> {
+impl<T, C: Codec<T>> NetPublisher<T, C> {
     pub fn new(session: &Session, robot: &str, topic: &Topic<T>) -> Result<Self, NetError> {
         let publisher = session
             .declare_publisher(topic_key(robot, topic))
@@ -249,26 +195,21 @@ impl<T: WireMessage> NetPublisher<T> {
             .map_err(zerr)?;
         Ok(Self {
             publisher,
-            _msg: PhantomData,
+            _types: PhantomData,
         })
     }
 
     pub fn publish(&self, value: &T) -> Result<(), NetError> {
-        let (bytes, name) = encode(value);
-        self.publisher
-            .put(bytes)
-            .attachment(name)
-            .wait()
-            .map_err(zerr)
+        self.publisher.put(C::encode(value)).wait().map_err(zerr)
     }
 }
 
-pub struct NetSubscriber<T> {
+pub struct NetSubscriber<T, C = Raw> {
     subscriber: zenoh::pubsub::Subscriber<FifoChannelHandler<Sample>>,
-    _msg: PhantomData<fn() -> T>,
+    _types: PhantomData<fn() -> (T, C)>,
 }
 
-impl<T: WireMessage> NetSubscriber<T> {
+impl<T, C: Codec<T>> NetSubscriber<T, C> {
     pub fn new(session: &Session, robot: &str, topic: &Topic<T>) -> Result<Self, NetError> {
         let subscriber = session
             .declare_subscriber(topic_key(robot, topic))
@@ -276,17 +217,14 @@ impl<T: WireMessage> NetSubscriber<T> {
             .map_err(zerr)?;
         Ok(Self {
             subscriber,
-            _msg: PhantomData,
+            _types: PhantomData,
         })
     }
 
-    /// Every message received since the last call, oldest first; undecodable ones are returned as
-    /// errors in place.
+    /// Every message received since the last call, oldest first; undecodable ones as errors.
     pub fn drain(&self) -> impl Iterator<Item = Result<T, NetError>> + '_ {
-        std::iter::from_fn(|| self.subscriber.try_recv().ok().flatten()).map(|s| {
-            let attachment = s.attachment().map(|a| a.to_bytes().into_owned());
-            decode(&s.payload().to_bytes(), attachment.as_deref())
-        })
+        std::iter::from_fn(|| self.subscriber.try_recv().ok().flatten())
+            .map(|s| C::decode(&s.payload().to_bytes()))
     }
 
     /// The newest valid message received since the last call, if any.
@@ -295,14 +233,128 @@ impl<T: WireMessage> NetSubscriber<T> {
     }
 }
 
+// ---- Services ------------------------------------------------------------------------------------
+
+type Handler<Ctx> = Box<dyn FnMut(&mut Ctx, &[u8]) -> Result<Vec<u8>, String> + Send>;
+
+/// Serves the services registered with [`handle`](Server::handle). Handlers get `&mut Ctx`, the
+/// state they act on, which the caller passes to [`poll`](Server::poll).
+pub struct Server<Ctx> {
+    queryable: Queryable<FifoChannelHandler<Query>>,
+    prefix: String,
+    handlers: HashMap<&'static str, Handler<Ctx>>,
+}
+
+impl<Ctx> Server<Ctx> {
+    /// Serve `elbows/<robot>/srv/*`.
+    pub fn new(session: &Session, robot: &str) -> Result<Self, NetError> {
+        let prefix = format!("{ROOT}/{robot}/srv/");
+        let queryable = session
+            .declare_queryable(format!("{prefix}*"))
+            .wait()
+            .map_err(zerr)?;
+        Ok(Self {
+            queryable,
+            prefix,
+            handlers: HashMap::new(),
+        })
+    }
+
+    pub fn handle<Req, Resp>(
+        &mut self,
+        service: &Service<Req, Resp>,
+        mut handler: impl FnMut(&mut Ctx, Req) -> Resp + Send + 'static,
+    ) -> &mut Self
+    where
+        Req: Serialize + DeserializeOwned + 'static,
+        Resp: Serialize + DeserializeOwned + 'static,
+    {
+        let erased: Handler<Ctx> = Box::new(move |ctx, bytes| {
+            let req =
+                <Json as Codec<Req>>::decode(bytes).map_err(|e| format!("bad request: {e}"))?;
+            Ok(<Json as Codec<Resp>>::encode(&handler(ctx, req)))
+        });
+        self.handlers.insert(service.name, erased);
+        self
+    }
+
+    /// Wait up to `timeout` for a request, then serve it and any others already waiting.
+    /// Returns how many were served.
+    pub fn poll(&mut self, ctx: &mut Ctx, timeout: Duration) -> usize {
+        let Ok(Some(first)) = self.queryable.recv_timeout(timeout) else {
+            return 0;
+        };
+        let mut served = 0;
+        let mut next = Some(first);
+        while let Some(query) = next {
+            self.serve(ctx, &query);
+            served += 1;
+            next = self.queryable.try_recv().ok().flatten();
+        }
+        served
+    }
+
+    fn serve(&mut self, ctx: &mut Ctx, query: &Query) {
+        let key = query.key_expr().as_str();
+        let name = key.strip_prefix(self.prefix.as_str()).unwrap_or(key);
+        let payload = query
+            .payload()
+            .map(|p| p.to_bytes().into_owned())
+            .unwrap_or_default();
+        let result = match self.handlers.get_mut(name) {
+            Some(handler) => handler(ctx, &payload),
+            None => Err(format!("unknown service {name:?}")),
+        };
+        let sent = match result {
+            Ok(bytes) => query.reply(query.key_expr().clone(), bytes).wait(),
+            Err(msg) => query.reply_err(msg).wait(),
+        };
+        if let Err(e) = sent {
+            eprintln!("rt-net: replying to {key}: {e}");
+        }
+    }
+}
+
+/// Call a service on the robotd for `robot` and wait for its response.
+pub fn call<Req, Resp>(
+    session: &Session,
+    robot: &str,
+    service: &Service<Req, Resp>,
+    request: &Req,
+) -> Result<Resp, NetError>
+where
+    Req: Serialize + DeserializeOwned,
+    Resp: Serialize + DeserializeOwned,
+{
+    let key = service_key(robot, service);
+    let replies = session
+        .get(&key)
+        .payload(<Json as Codec<Req>>::encode(request))
+        .timeout(CALL_TIMEOUT)
+        .wait()
+        .map_err(zerr)?;
+    let reply = replies
+        .recv()
+        .map_err(|_| NetError::NoReply { key: key.clone() })?;
+    match reply.into_result() {
+        Ok(sample) => <Json as Codec<Resp>>::decode(&sample.payload().to_bytes()),
+        Err(e) => Err(NetError::Remote {
+            key,
+            msg: e.payload().try_to_string().unwrap_or_default().into_owned(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use iceoryx2_bb_derive_macros::ZeroCopySend;
+    use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
+    use rt_core::services::{ENABLE, HOLD, Reply};
 
     #[repr(C)]
     #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, ZeroCopySend)]
-    #[type_name("elbows.test.Pair")]
+    #[type_name("elbows.test.Pair/1")]
     struct Pair {
         a: u64,
         b: f32,
@@ -311,21 +363,16 @@ mod tests {
 
     #[repr(C)]
     #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, ZeroCopySend)]
-    #[type_name("elbows.test.Other")]
-    struct Other {
+    #[type_name("elbows.test.Pair/2")]
+    struct PairV2 {
         a: u64,
-        b: f32,
         c: u32,
+        b: f32,
     }
 
     #[test]
     fn keys() {
-        assert_eq!(ctl_key("so101", Command::Enable), "elbows/so101/ctl/enable");
-        assert_eq!(
-            Command::from_key("elbows/so101/ctl/stop"),
-            Some(Command::Stop)
-        );
-        assert_eq!(Command::from_key("elbows/so101/ctl/fly"), None);
+        assert_eq!(service_key("so101", &ENABLE), "elbows/so101/srv/enable");
         assert_eq!(
             topic_key("so101", &rt_core::topics::PLAN),
             "elbows/so101/topic/plan"
@@ -337,34 +384,66 @@ mod tests {
     }
 
     #[test]
-    fn wire_round_trip_and_type_check() {
+    fn raw_codec_round_trips_and_refuses_other_layouts() {
         let v = Pair { a: 7, b: 1.5, c: 3 };
-        let (bytes, name) = encode(&v);
-        assert_eq!(decode::<Pair>(&bytes, Some(name.as_bytes())).unwrap(), v);
-        // same size and layout, different type: refused
-        assert!(matches!(
-            decode::<Other>(&bytes, Some(name.as_bytes())),
-            Err(NetError::TypeMismatch { .. })
-        ));
-        assert!(matches!(
-            decode::<Pair>(&bytes[1..], Some(name.as_bytes())),
-            Err(NetError::TypeMismatch { .. })
-        ));
-        assert!(matches!(
-            decode::<Pair>(&bytes, None),
-            Err(NetError::TypeMismatch { .. })
-        ));
+        let bytes = <Raw as Codec<Pair>>::encode(&v);
+        assert_eq!(<Raw as Codec<Pair>>::decode(&bytes).unwrap(), v);
+        // same size, reordered fields, bumped version: refused, not misread
+        assert!(<Raw as Codec<PairV2>>::decode(&bytes).is_err());
+        assert!(<Raw as Codec<Pair>>::decode(&bytes[..bytes.len() - 1]).is_err());
+        assert!(<Raw as Codec<Pair>>::decode(b"").is_err());
     }
 
     #[test]
-    fn reply_is_plain_json() {
+    fn json_codec_handles_empty_requests() {
+        assert_eq!(<Json as Codec<()>>::decode(b"").unwrap(), ());
         let reply = Reply {
             ok: true,
             message: "enabled".into(),
-            status: StatusReport::default(),
+            ..Default::default()
         };
-        let json = serde_json::to_string(&reply).unwrap();
-        assert!(json.starts_with(r#"{"ok":true,"message":"enabled","status":{"mode":"""#));
-        assert_eq!(serde_json::from_str::<Reply>(&json).unwrap(), reply);
+        let bytes = <Json as Codec<Reply>>::encode(&reply);
+        assert!(bytes.starts_with(br#"{"ok":true,"message":"enabled""#));
+        assert_eq!(<Json as Codec<Reply>>::decode(&bytes).unwrap(), reply);
+    }
+
+    /// A real round trip through Zenoh on a private localhost port.
+    #[test]
+    fn server_dispatches_by_service() {
+        let endpoint = format!("tcp/127.0.0.1:{}", 17_000 + std::process::id() % 1000);
+        let server_session = open(&NetConfig {
+            listen: vec![endpoint.clone()],
+            connect: Vec::new(),
+        })
+        .unwrap();
+        let client = open(&NetConfig::client(&endpoint)).unwrap();
+        let mut server = Server::<u32>::new(&server_session, "t").unwrap();
+        server.handle(&ENABLE, |calls: &mut u32, ()| {
+            *calls += 1;
+            Reply {
+                ok: true,
+                message: format!("call {calls}"),
+                ..Default::default()
+            }
+        });
+        let serving = std::thread::spawn(move || {
+            let mut calls = 0;
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while calls < 2 && std::time::Instant::now() < deadline {
+                server.poll(&mut calls, Duration::from_millis(10));
+            }
+            drop(server_session);
+        });
+        // the client may need a moment to connect
+        let first = (0..50)
+            .find_map(|_| call(&client, "t", &ENABLE, &()).ok())
+            .unwrap();
+        assert_eq!(first.message, "call 1");
+        assert!(
+            matches!(call(&client, "t", &HOLD, &()), Err(NetError::Remote { .. })),
+            "unregistered"
+        );
+        assert_eq!(call(&client, "t", &ENABLE, &()).unwrap().message, "call 2");
+        serving.join().unwrap();
     }
 }

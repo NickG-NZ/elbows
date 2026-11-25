@@ -14,9 +14,10 @@
 
 use std::process::ExitCode;
 
+use rt_core::services::{COMMANDS, Reply};
 use rt_devices::serial_ports;
 use rt_devices::setup::Setup;
-use rt_net::{Command, NetConfig, Reply};
+use rt_net::NetConfig;
 
 const USAGE: &str = "usage:
   robotctl --robot NAME status|enable|hold|stop [--connect ENDPOINT] [--json]
@@ -54,13 +55,16 @@ fn command(args: &[&str]) -> Result<(), String> {
             "--robot" => robot = it.next().copied(),
             "--connect" => endpoint = it.next().copied().ok_or("--connect needs an endpoint")?,
             "--json" => json = true,
-            _ => cmd = Some(Command::parse(a).ok_or(format!("unknown command {a:?}\n{USAGE}"))?),
+            _ => {
+                let svc = COMMANDS.into_iter().find(|s| s.name == a);
+                cmd = Some(svc.ok_or(format!("unknown command {a:?}\n{USAGE}"))?);
+            }
         }
     }
     let robot = robot.ok_or(format!("--robot is required\n{USAGE}"))?;
     let cmd = cmd.ok_or(USAGE)?;
     let session = rt_net::open(&NetConfig::client(endpoint)).map_err(|e| e.to_string())?;
-    let reply = rt_net::request(&session, robot, cmd).map_err(|e| e.to_string())?;
+    let reply: Reply = rt_net::call(&session, robot, cmd, &()).map_err(|e| e.to_string())?;
     if json {
         println!(
             "{}",

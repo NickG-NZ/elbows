@@ -10,7 +10,6 @@ publish.workspace = true
 [dependencies]
 rt-core.workspace = true
 bytemuck.workspace = true
-iceoryx2-bb-elementary-traits.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -21,3 +20,4 @@ workspace = true
 
 [dev-dependencies]
 iceoryx2-bb-derive-macros.workspace = true
+iceoryx2-bb-elementary-traits.workspace = true

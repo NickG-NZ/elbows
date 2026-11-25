@@ -100,7 +100,7 @@ supervisor ── in-process command queue ──▶ RT thread (decides, applies
 - **Modes:** robotd starts **Disabled** (torque off, once there are drivers). `enable` → Hold at
   the measured pose; a valid plan → Running; the plan ending or `hold` → Hold; `stop` → Disabled.
   Fault (repeated overruns, device error) is latched until restart. Commands arrive as Zenoh
-  queries; the supervisor forwards them in-process, the RT thread applies or refuses them at a cycle
+  service requests; the supervisor forwards them in-process, the RT thread applies or refuses them at a cycle
   boundary, and its verdict is the reply.
 - **Sessions:** clients announce themselves with Zenoh liveliness tokens. The supervisor lists them
   in `status` and logs the moment one disappears (clean exit, crash or network loss).
@@ -220,26 +220,41 @@ second, not both.
 ### Zenoh: the control plane and off-host topics (`rt-net`)
 
 **Decision: Zenoh is robotd's control plane, locally and remotely, and carries every topic that
-leaves the host.** One mechanism serves `robotctl`, local policies and remote ones; a separate local
-socket protocol would have to be rebuilt for remote clients anyway. robotd listens on explicit
-endpoints (`[robotd.net] listen`, default `tcp/127.0.0.1:7447`; `tcp/0.0.0.0:7447` to accept other
-machines). Multicast discovery is off. Uses Zenoh's synchronous API; no async runtime in our code.
+leaves the host.** One mechanism serves `robotctl`, local policies and remote ones. robotd listens
+on explicit endpoints (`[robotd.net] listen`, default `tcp/127.0.0.1:7447`; `tcp/0.0.0.0:7447` to
+accept other machines). Multicast discovery is off. Zenoh's synchronous API only; no async runtime
+in our code.
+
+**The transport is generic; message-specific behaviour is declared and registered.**
+
+- **Declarations** live in `rt-core`: topics (`Topic<T>`, name + type + pattern) and services
+  (`Service<Req, Resp>`, name + request + response types). `topics::visit_all` lists every topic
+  with its type, so code can act on topics chosen by name at runtime.
+- **`rt-net`** knows no particular message: `NetPublisher<T>`/`NetSubscriber<T>` for any topic, a
+  `Server<Ctx>` that serves whatever services have handlers registered (`server.handle(&ENABLE,
+  |ctx, req| …)`), and `call(&service, &req)` for clients.
+- **Encoding is a per-topic `Codec`.** Topics default to `Raw`: the message's own `#[repr(C)]`
+  bytes, prefixed by its versioned type name (`elbows.Plan/1`), little-endian. A peer built from a
+  different layout is refused, not misread; a test snapshots every message's layout so a change
+  forces a version bump. Services use `Json` (readable; easy from Python and the shell). A topic
+  that must reach clients in other languages can switch to a schema codec (protobuf) on its own.
+- **The bridge** (in robotd's supervisor) is a list of generic routes. The setup file picks the
+  topics: `[robotd.net] out = ["state", "status"]`, `in = ["plan"]` (the defaults); unknown names
+  or a topic in both lists are refused at startup. Local topics have one publisher, so an inbound
+  route claims it only while remote messages arrive and releases it after 1 s idle: exactly one
+  publisher (local or remote) drives a topic at a time.
+- **The RT thread is the exception:** it polls its topics at a fixed point in each cycle rather than
+  having handlers called on it, so its timing stays deterministic. Handlers are for non-RT code.
 
 ```text
-elbows/<robot>/ctl/{status,enable,hold,stop}   queries robotd answers (JSON reply)
-elbows/<robot>/topic/<name>                    bridged topics: raw #[repr(C)] bytes, type name attached
-elbows/<robot>/session/<role>/<id>             liveliness tokens of connected clients
+elbows/<robot>/topic/<name>           topics, encoded by their Codec
+elbows/<robot>/srv/<name>             services: JSON request → JSON response
+elbows/<robot>/session/<role>/<id>    liveliness tokens of connected clients
 ```
 
-- **Commands** are Zenoh queries with JSON replies (`ok`, `message`, `status`), so the shell and
-  Python can use them too.
-- **Topics** carry the same `#[repr(C)]` messages as the local topics, as raw little-endian bytes
-  with the type name attached; a mismatch is refused and never reaches the RT thread.
-- **Bridge** (in the supervisor): `state` and `status` out; `plan` in. The bridge takes the local
-  single-publisher `plan` topic only while remote plans arrive, and releases it after 1 s idle, so
-  exactly one policy (local or remote) drives the robot at a time. A remote policy's plan times are
-  on the robot's clock: it estimates "now" as the last state's stamp plus the time since it arrived.
-- **Not yet:** access control (TLS, ACLs) for endpoints exposed beyond localhost; Python clients.
+A remote policy's plan times are on the robot's clock: it estimates "now" as the last state's stamp
+plus the time since it arrived. **Not yet:** access control (TLS, ACLs) for endpoints exposed beyond
+localhost; Python clients.
 
 ### First prototype
 
@@ -320,7 +335,7 @@ Built in `elbows_rt/` and tested on macOS (no RT scheduling there), not yet on t
 - `rt-ipc`: typed topics over iceoryx2 (fan-out, history, drop-oldest, single publisher; tested).
 - `rt-core`: messages and topic declarations, `ClockTrigger`, RT thread setup, cycle stats, plan
   validation and sampling.
-- `rt-net`: Zenoh keys, command protocol, wire encoding with type check.
+- `rt-net`: generic Zenoh pub/sub, service server/client, codecs (raw with layout versions, JSON).
 - `rt-devices`: setup files, serial-port discovery, calibration files, the device traits. No drivers.
 - `robotd`: supervisor (Zenoh commands and sessions, bridge, stall detection, signals) plus the RT
   loop with modes, following plans with no devices. `plan-demo` stands in for a policy, locally or

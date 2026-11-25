@@ -12,6 +12,7 @@
 //! Usage: `robotd --robot so101 [--setup hardware/setups/so101] [--rate-hz 200]`, then
 //! `robotctl --robot so101 enable`.
 
+mod bridge;
 mod config;
 mod controller;
 mod rt_loop;
@@ -28,6 +29,7 @@ use rt_core::rt::{RT_STACK_BYTES, setup_current_thread};
 use rt_core::trigger::ClockTrigger;
 use rt_net::NetConfig;
 
+use crate::bridge::Bridge;
 use crate::config::Config;
 use crate::controller::Controller;
 use crate::rt_loop::{RtLoop, SupervisorLink};
@@ -182,7 +184,8 @@ fn run() -> Result<(), String> {
                 status: status_rx,
                 heartbeat,
             };
-            Supervisor::new(&args.robot, rt, net)
+            let bridge = Bridge::from_names(&args.robot, &net, &cfg.net.out, &cfg.net.inbound)?;
+            Supervisor::new(&args.robot, rt, net, bridge)
         });
     let mut supervisor = match supervisor {
         Ok(s) => s,

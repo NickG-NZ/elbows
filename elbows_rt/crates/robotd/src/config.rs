@@ -12,8 +12,10 @@
 //! required = true          # fail rather than run without RT scheduling
 //!
 //! [robotd.net]
-//! listen = ["tcp/127.0.0.1:7447"]   # Zenoh endpoints for commands and remote policies;
+//! listen = ["tcp/127.0.0.1:7447"]   # Zenoh endpoints for services and remote clients;
 //!                                   # e.g. "tcp/0.0.0.0:7447" to accept other machines
+//! out = ["state", "status"]         # local topics published to Zenoh (any in rt_core::topics)
+//! in = ["plan"]                     # Zenoh topics republished locally (e.g. a remote policy)
 //!
 //! [robotd.plan]
 //! max_obs_age_ms = 500
@@ -43,12 +45,17 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct NetSection {
     pub listen: Vec<String>,
+    pub out: Vec<String>,
+    #[serde(rename = "in")]
+    pub inbound: Vec<String>,
 }
 
 impl Default for NetSection {
     fn default() -> Self {
         Self {
             listen: vec![rt_net::DEFAULT_ENDPOINT.to_string()],
+            out: vec!["state".into(), "status".into()],
+            inbound: vec!["plan".into()],
         }
     }
 }

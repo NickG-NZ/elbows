@@ -16,11 +16,9 @@
 //! In the RT loop, `publish` and `latest`/`drain` don't allocate. They may make syscalls when a
 //! peer connects or disconnects, which iceoryx2 picks up on the next call.
 
-use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Once;
 
-use bytemuck::Pod;
 use iceoryx2::port::publisher::Publisher as IoxPublisher;
 use iceoryx2::port::subscriber::Subscriber as IoxSubscriber;
 use iceoryx2::prelude::*;
@@ -32,10 +30,7 @@ pub const MAX_SUBSCRIBERS: usize = 8;
 /// Processes that may have a topic open at once.
 pub const MAX_NODES: usize = 16;
 
-/// A type that can be sent through a topic: plain data, valid for any bytes a peer writes
-/// (`Pod`), with a fixed cross-process layout and name (`ZeroCopySend`).
-pub trait Message: Pod + ZeroCopySend + Debug + Send + Sync + 'static {}
-impl<T: Pod + ZeroCopySend + Debug + Send + Sync + 'static> Message for T {}
+pub use rt_core::Message;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IpcError {
@@ -50,7 +45,7 @@ pub enum IpcError {
     Receive,
 }
 
-fn setup<E: Debug>(what: impl Into<String>) -> impl FnOnce(E) -> IpcError {
+fn setup<E: std::fmt::Debug>(what: impl Into<String>) -> impl FnOnce(E) -> IpcError {
     let what = what.into();
     move |e| IpcError::Setup {
         what,

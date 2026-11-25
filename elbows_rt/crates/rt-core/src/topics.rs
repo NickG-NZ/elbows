@@ -4,6 +4,7 @@
 
 use std::marker::PhantomData;
 
+use crate::Message;
 use crate::msgs::{ArmState, Plan, Status};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,3 +47,43 @@ pub const PLAN: Topic<Plan> = Topic::latest("plan");
 pub const STATE: Topic<ArmState> = Topic::latest("state");
 /// Cycle timing and mode, ~10 Hz: RT thread → supervisor, `robotctl`.
 pub const STATUS: Topic<Status> = Topic::latest("status");
+
+/// Something that wants to see every declared topic with its type, e.g. to bridge the ones a setup
+/// file names.
+pub trait TopicVisitor {
+    fn visit<T: Message>(&mut self, topic: &'static Topic<T>);
+}
+
+/// Visit every topic declared above. A new topic must be added here too.
+pub fn visit_all(v: &mut impl TopicVisitor) {
+    v.visit(&PLAN);
+    v.visit(&STATE);
+    v.visit(&STATUS);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Names(Vec<&'static str>);
+    impl TopicVisitor for Names {
+        fn visit<T: Message>(&mut self, topic: &'static Topic<T>) {
+            self.0.push(topic.name);
+        }
+    }
+
+    #[test]
+    fn topic_names_are_unique() {
+        let mut names = Names(Vec::new());
+        visit_all(&mut names);
+        let mut sorted = names.0.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            names.0.len(),
+            "duplicate topic name in {:?}",
+            names.0
+        );
+    }
+}

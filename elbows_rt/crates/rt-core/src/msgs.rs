@@ -1,4 +1,8 @@
 //! Messages crossing process boundaries. Fixed size, `#[repr(C)]`, `Pod`, no pointers.
+//!
+//! The same bytes go through shared memory and over the network, so the layout is the wire format:
+//! every message's `#[type_name]` carries a layout version (`elbows.Plan/1`). Change a message's
+//! fields and the `wire_layouts` test fails until the version is bumped.
 //! See `docs/realtime-control.md` for the plan's semantics.
 
 use bytemuck::{Pod, Zeroable};
@@ -18,7 +22,7 @@ pub type Joints = [f32; DOF];
 /// `CLOCK_MONOTONIC`. Plans are sampled at the current time, never consumed as a queue.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable, ZeroCopySend)]
-#[type_name("elbows.Plan")]
+#[type_name("elbows.Plan/1")]
 pub struct Plan {
     /// Set by the policy; increases with each plan.
     pub seq: u64,
@@ -155,7 +159,7 @@ impl Mode {
 /// Published by the RT thread every cycle.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable, ZeroCopySend)]
-#[type_name("elbows.ArmState")]
+#[type_name("elbows.ArmState/1")]
 pub struct ArmState {
     /// `CLOCK_MONOTONIC` time of the cycle this state was measured in. Policies echo it as
     /// `Plan::obs_stamp_ns`.
@@ -173,11 +177,14 @@ pub struct ArmState {
 /// What the RT thread reports about itself, ~10 Hz.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable, ZeroCopySend)]
-#[type_name("elbows.Status")]
+#[type_name("elbows.Status/1")]
 pub struct Status {
     pub stats: CycleStats,
     pub last: ArmState,
 }
+
+// Raw-byte messages assume little-endian peers (x86-64 and ARM64 both are).
+const _: () = assert!(cfg!(target_endian = "little"));
 
 #[cfg(test)]
 mod tests {
@@ -236,6 +243,61 @@ mod tests {
         assert_eq!(
             ramp(now).validate(now + 100 * MS, &cur, &limits()),
             Err(PlanError::Expired)
+        );
+    }
+
+    /// Snapshot of every wire message's layout. If this fails, a message's fields changed: bump the
+    /// `/N` in its `#[type_name]` (old peers then refuse it instead of misreading it), then update
+    /// the numbers here.
+    #[test]
+    fn wire_layouts() {
+        use crate::stats::{CycleStats, Histogram};
+        use crate::type_name;
+        use std::mem::offset_of;
+
+        assert_eq!(type_name::<Plan>(), "elbows.Plan/1");
+        assert_eq!(
+            (
+                size_of::<Plan>(),
+                offset_of!(Plan, t0_ns),
+                offset_of!(Plan, obs_stamp_ns)
+            ),
+            (1568, 8, 16)
+        );
+        assert_eq!(
+            (
+                offset_of!(Plan, dt_ns),
+                offset_of!(Plan, n),
+                offset_of!(Plan, q)
+            ),
+            (24, 28, 32)
+        );
+
+        assert_eq!(type_name::<ArmState>(), "elbows.ArmState/1");
+        assert_eq!(
+            (
+                size_of::<ArmState>(),
+                offset_of!(ArmState, mode),
+                offset_of!(ArmState, plans_rejected)
+            ),
+            (80, 24, 28)
+        );
+        assert_eq!(
+            (offset_of!(ArmState, q_cmd), offset_of!(ArmState, q_meas)),
+            (32, 56)
+        );
+
+        assert_eq!(type_name::<Status>(), "elbows.Status/1");
+        assert_eq!((size_of::<Status>(), offset_of!(Status, last)), (496, 416));
+        assert_eq!(type_name::<CycleStats>(), "elbows.CycleStats/1");
+        assert_eq!(
+            (size_of::<CycleStats>(), offset_of!(CycleStats, exec)),
+            (416, 216)
+        );
+        assert_eq!(type_name::<Histogram>(), "elbows.Histogram/1");
+        assert_eq!(
+            (size_of::<Histogram>(), offset_of!(Histogram, max_ns)),
+            (200, 192)
         );
     }
 }

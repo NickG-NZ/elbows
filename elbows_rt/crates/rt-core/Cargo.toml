@@ -12,6 +12,7 @@ bytemuck.workspace = true
 iceoryx2-bb-derive-macros.workspace = true
 iceoryx2-bb-elementary-traits.workspace = true
 libc.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [lints]

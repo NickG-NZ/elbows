@@ -2557,6 +2557,7 @@ dependencies = [
 name = "robotctl"
 version = "0.1.0"
 dependencies = [
+ "rt-core",
  "rt-devices",
  "rt-net",
  "serde_json",
@@ -2619,6 +2620,7 @@ dependencies = [
  "iceoryx2-bb-derive-macros",
  "iceoryx2-bb-elementary-traits",
  "libc",
+ "serde",
  "thiserror 2.0.21",
 ]
 
