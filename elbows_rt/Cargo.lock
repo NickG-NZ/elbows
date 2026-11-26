@@ -2559,7 +2559,7 @@ version = "0.1.0"
 dependencies = [
  "rt-core",
  "rt-devices",
- "rt-net",
+ "rt-node",
  "serde_json",
 ]
 
@@ -2570,13 +2570,11 @@ dependencies = [
  "bytemuck",
  "rt-core",
  "rt-devices",
- "rt-ipc",
- "rt-net",
+ "rt-node",
  "serde",
  "serde_json",
  "signal-hook",
  "toml 0.8.23",
- "zenoh",
 ]
 
 [[package]]
@@ -2657,6 +2655,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "zenoh",
+]
+
+[[package]]
+name = "rt-node"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "rt-core",
+ "rt-ipc",
+ "rt-net",
+ "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -15,7 +15,7 @@ use rt_core::time::monotonic_ns;
 use rt_core::topics::{PLAN, STATE, STATUS};
 use rt_core::trigger::Trigger;
 use rt_devices::CyclicDevice;
-use rt_ipc::{IpcError, Node, Publisher, Subscriber};
+use rt_node::{Link, Node, NodeError, Publisher, Subscriber};
 
 use crate::controller::{Controller, ModeCommand};
 
@@ -64,8 +64,9 @@ impl RtLoop {
         controller: Controller,
         link: SupervisorLink,
         max_consecutive_overruns: u32,
-    ) -> Result<Self, IpcError> {
-        let node = Node::new(robot, "robotd-rt")?;
+    ) -> Result<Self, NodeError> {
+        // Local: topics in shared memory. The RT node never opens the network.
+        let node = Node::new(robot, "robotd-rt", Link::Local)?;
         Ok(Self {
             plans: node.subscriber(&PLAN)?,
             state: node.publisher(&STATE)?,

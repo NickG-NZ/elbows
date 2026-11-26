@@ -53,7 +53,7 @@ pub struct NetSection {
 impl Default for NetSection {
     fn default() -> Self {
         Self {
-            listen: vec![rt_net::DEFAULT_ENDPOINT.to_string()],
+            listen: vec![rt_node::DEFAULT_ENDPOINT.to_string()],
             out: vec!["state".into(), "status".into()],
             inbound: vec!["plan".into()],
         }

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use rt_core::Message;
 use rt_core::topics::{Pattern, Topic, TopicVisitor, visit_all};
-use rt_net::{NetPublisher, NetSubscriber, Session};
+use rt_node::{Node, Publisher, Subscriber};
 
 pub const INBOUND_IDLE: Duration = Duration::from_secs(1);
 
@@ -29,8 +29,8 @@ trait Route {
 
 struct Outbound<T: Message> {
     pattern: Pattern,
-    local: rt_ipc::Subscriber<T>,
-    remote: NetPublisher<T>,
+    local: Subscriber<T>,
+    remote: Publisher<T>,
 }
 
 impl<T: Message> Route for Outbound<T> {
@@ -53,19 +53,20 @@ impl<T: Message> Route for Outbound<T> {
 struct Inbound<T: Message> {
     topic: &'static Topic<T>,
     name: String,
-    node: Rc<rt_ipc::Node>,
-    remote: NetSubscriber<T>,
-    local: Option<rt_ipc::Publisher<T>>,
+    node: Rc<Node>,
+    remote: Subscriber<T>,
+    local: Option<Publisher<T>>,
     last_remote: Instant,
     refusing: bool,
 }
 
 impl<T: Message> Route for Inbound<T> {
     fn step(&mut self) {
-        for msg in self.remote.drain() {
-            let Ok(msg) = msg else {
-                continue; // wrong type or layout version: never reaches a local subscriber
-            };
+        // Messages of the wrong type or layout version are dropped by the subscriber: they never
+        // reach a local one.
+        let mut received = Vec::new();
+        let _ = self.remote.drain(|msg| received.push(msg));
+        for msg in received {
             self.last_remote = Instant::now();
             if self.local.is_none() {
                 match self.node.publisher(self.topic) {
@@ -98,30 +99,21 @@ impl<T: Message> Route for Inbound<T> {
 }
 
 pub struct Bridge {
-    robot: String,
-    node: Rc<rt_ipc::Node>,
-    net: Session,
+    node: Rc<Node>,
     routes: Vec<Box<dyn Route>>,
 }
 
 impl Bridge {
-    pub fn new(robot: &str, net: &Session) -> Result<Self, String> {
-        let node = rt_ipc::Node::new(robot, "robotd-bridge").map_err(|e| e.to_string())?;
-        Ok(Self {
-            robot: robot.into(),
-            node: Rc::new(node),
-            net: net.clone(),
+    /// Bridge through `node`, a local node that also has the network.
+    pub fn new(node: Rc<Node>) -> Self {
+        Self {
+            node,
             routes: Vec::new(),
-        })
+        }
     }
 
     /// Bridge the topics named in `out` and `inbound` (by their declared names).
-    pub fn from_names(
-        robot: &str,
-        net: &Session,
-        out: &[String],
-        inbound: &[String],
-    ) -> Result<Self, String> {
+    pub fn from_names(node: Rc<Node>, out: &[String], inbound: &[String]) -> Result<Self, String> {
         struct Select<'a> {
             bridge: Bridge,
             out: &'a [String],
@@ -146,7 +138,7 @@ impl Bridge {
             return Err(format!("topic {both:?} can't be bridged both in and out"));
         }
         let mut select = Select {
-            bridge: Bridge::new(robot, net)?,
+            bridge: Bridge::new(node),
             out,
             inbound,
             declared: Vec::new(),
@@ -174,20 +166,18 @@ impl Bridge {
         topic: &'static Topic<T>,
         dir: Direction,
     ) -> Result<(), String> {
-        let name = format!("{}/{}", self.robot, topic.name);
+        let name = format!("{}/{}", self.node.robot(), topic.name);
         let route: Box<dyn Route> = match dir {
             Direction::Out => Box::new(Outbound {
                 pattern: topic.pattern,
                 local: self.node.subscriber(topic).map_err(|e| e.to_string())?,
-                remote: NetPublisher::new(&self.net, &self.robot, topic)
-                    .map_err(|e| e.to_string())?,
+                remote: self.node.net_publisher(topic).map_err(|e| e.to_string())?,
             }),
             Direction::In => Box::new(Inbound {
                 topic,
                 name,
                 node: self.node.clone(),
-                remote: NetSubscriber::new(&self.net, &self.robot, topic)
-                    .map_err(|e| e.to_string())?,
+                remote: self.node.net_subscriber(topic).map_err(|e| e.to_string())?,
                 local: None,
                 last_remote: Instant::now(),
                 refusing: false,

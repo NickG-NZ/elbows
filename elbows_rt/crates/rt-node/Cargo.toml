@@ -1,0 +1,21 @@
+[package]
+name = "rt-node"
+description = "Node: the one API for topics and services, on this host (iceoryx2) or over the network (Zenoh)"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rt-core.workspace = true
+rt-ipc.workspace = true
+rt-net.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
+
+[lints]
+workspace = true

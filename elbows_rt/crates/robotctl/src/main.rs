@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use rt_core::services::{COMMANDS, Reply};
 use rt_devices::serial_ports;
 use rt_devices::setup::Setup;
-use rt_net::NetConfig;
+use rt_node::{Link, Node};
 
 const USAGE: &str = "usage:
   robotctl --robot NAME status|enable|hold|stop [--connect ENDPOINT] [--json]
@@ -48,7 +48,7 @@ fn main() -> ExitCode {
 
 fn command(args: &[&str]) -> Result<(), String> {
     let (mut robot, mut endpoint, mut json, mut cmd) =
-        (None, rt_net::DEFAULT_ENDPOINT, false, None);
+        (None, rt_node::DEFAULT_ENDPOINT, false, None);
     let mut it = args.iter();
     while let Some(&a) = it.next() {
         match a {
@@ -63,8 +63,10 @@ fn command(args: &[&str]) -> Result<(), String> {
     }
     let robot = robot.ok_or(format!("--robot is required\n{USAGE}"))?;
     let cmd = cmd.ok_or(USAGE)?;
-    let session = rt_net::open(&NetConfig::client(endpoint)).map_err(|e| e.to_string())?;
-    let reply: Reply = rt_net::call(&session, robot, cmd, &()).map_err(|e| e.to_string())?;
+    // Remote even on the robot: robotctl only calls services, which go over Zenoh either way.
+    let node = Node::new(robot, "robotctl", Link::Remote(endpoint.to_string()))
+        .map_err(|e| e.to_string())?;
+    let reply: Reply = node.call(cmd, &()).map_err(|e| e.to_string())?;
     if json {
         println!(
             "{}",
@@ -92,11 +94,11 @@ fn print_reply(r: &Reply) {
         s.latency_p99_us, s.latency_max_us, s.exec_p99_us
     );
     println!(
-        "sessions  {}",
-        if s.sessions.is_empty() {
+        "nodes     {}",
+        if s.nodes.is_empty() {
             "none".into()
         } else {
-            s.sessions.join(", ")
+            s.nodes.join(", ")
         }
     );
 }

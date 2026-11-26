@@ -10,7 +10,7 @@ publish.workspace = true
 [dependencies]
 rt-core.workspace = true
 rt-devices.workspace = true
-rt-net.workspace = true
+rt-node.workspace = true
 serde_json.workspace = true
 
 [lints]

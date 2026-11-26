@@ -1,9 +1,7 @@
-//! Opening a Zenoh session, and announcing a client with a liveliness token.
+//! Opening a Zenoh session.
 
-use zenoh::liveliness::LivelinessToken;
 use zenoh::{Session, Wait};
 
-use crate::keys::session_key;
 use crate::{NetError, zerr};
 
 /// Where robotd listens and clients connect, unless configured otherwise.
@@ -24,6 +22,14 @@ impl NetConfig {
             connect: vec![endpoint.to_string()],
         }
     }
+
+    /// Accept connections on `endpoints` (robotd).
+    pub fn server(endpoints: &[String]) -> Self {
+        Self {
+            listen: endpoints.to_vec(),
+            connect: Vec::new(),
+        }
+    }
 }
 
 pub fn open(cfg: &NetConfig) -> Result<Session, NetError> {
@@ -40,15 +46,4 @@ pub fn open(cfg: &NetConfig) -> Result<Session, NetError> {
             .map_err(|e| NetError::Zenoh(format!("config {key}: {e}")))?;
     }
     zenoh::open(config).wait().map_err(zerr)
-}
-
-/// Announce this process as `role` (e.g. "policy") for as long as the token lives. robotd lists
-/// live tokens as sessions and notices at once when one goes away.
-pub fn declare_session(
-    session: &Session,
-    robot: &str,
-    role: &str,
-) -> Result<LivelinessToken, NetError> {
-    let key = session_key(robot, role, &session.zid().to_string());
-    session.liveliness().declare_token(key).wait().map_err(zerr)
 }

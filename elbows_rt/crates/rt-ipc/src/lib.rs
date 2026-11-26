@@ -1,7 +1,7 @@
-//! Typed topics over iceoryx2. Drivers, the controller and policies use this API, never iceoryx2
-//! directly, so the transport can be swapped.
+//! Typed topics over iceoryx2: zero-copy pub/sub between processes on one host. A backend of
+//! `rt-node`: applications use `rt_node::Node`, which uses this for topics on a local node.
 //!
-//! Topics are declared in `rt_core::topics` (name, message type and pattern together). A [`Node`]
+//! Topics are declared in `rt_core::topics` (name, message type and pattern together). An [`IpcNode`]
 //! prefixes every topic with a namespace, normally the robot name: `so101/plan`.
 //!
 //! - Every topic has **one publisher** and up to [`MAX_SUBSCRIBERS`] subscribers, each with its own
@@ -11,7 +11,7 @@
 //! - [`Pattern::Queue`]: buffer of `depth`, every sample in order (until it overflows).
 //!
 //! Ports use iceoryx2's single-threaded `ipc` variant: no locks inside `publish`/`receive`, but a
-//! [`Node`] and its ports are `!Send`. Each thread creates its own, during setup.
+//! [`IpcNode`] and its ports are `!Send`. Each thread creates its own, during setup.
 //!
 //! In the RT loop, `publish` and `latest`/`drain` don't allocate. They may make syscalls when a
 //! peer connects or disconnects, which iceoryx2 picks up on the next call.
@@ -54,12 +54,12 @@ fn setup<E: std::fmt::Debug>(what: impl Into<String>) -> impl FnOnce(E) -> IpcEr
 }
 
 /// One participant (a process, or a thread within one). Owns its ports' resources.
-pub struct Node {
+pub struct IpcNode {
     node: iceoryx2::node::Node<ipc::Service>,
     namespace: String,
 }
 
-impl Node {
+impl IpcNode {
     /// `namespace` prefixes every topic (normally the robot name); `name` identifies this node in
     /// iceoryx2's tooling (`iox2 node list`).
     pub fn new(namespace: &str, name: &str) -> Result<Self, IpcError> {
@@ -111,34 +111,34 @@ impl Node {
     }
 
     /// The topic's single publisher. Fails if another live process already publishes it.
-    pub fn publisher<T: Message>(&self, topic: &Topic<T>) -> Result<Publisher<T>, IpcError> {
+    pub fn publisher<T: Message>(&self, topic: &Topic<T>) -> Result<IpcPublisher<T>, IpcError> {
         let port = self
             .service(topic)?
             .publisher_builder()
             .backpressure_strategy(BackpressureStrategy::DiscardData)
             .create()
             .map_err(setup(format!("publish {}", self.topic_name(topic))))?;
-        Ok(Publisher { port })
+        Ok(IpcPublisher { port })
     }
 
-    pub fn subscriber<T: Message>(&self, topic: &Topic<T>) -> Result<Subscriber<T>, IpcError> {
+    pub fn subscriber<T: Message>(&self, topic: &Topic<T>) -> Result<IpcSubscriber<T>, IpcError> {
         let port = self
             .service(topic)?
             .subscriber_builder()
             .create()
             .map_err(setup(format!("subscribe {}", self.topic_name(topic))))?;
-        Ok(Subscriber {
+        Ok(IpcSubscriber {
             port,
             _msg: PhantomData,
         })
     }
 }
 
-pub struct Publisher<T: Message> {
+pub struct IpcPublisher<T: Message> {
     port: IoxPublisher<ipc::Service, T, ()>,
 }
 
-impl<T: Message> Publisher<T> {
+impl<T: Message> IpcPublisher<T> {
     /// Send a copy of `value` to every subscriber. Never blocks.
     pub fn publish(&self, value: &T) -> Result<(), IpcError> {
         self.port
@@ -148,12 +148,12 @@ impl<T: Message> Publisher<T> {
     }
 }
 
-pub struct Subscriber<T: Message> {
+pub struct IpcSubscriber<T: Message> {
     port: IoxSubscriber<ipc::Service, T, ()>,
     _msg: PhantomData<T>,
 }
 
-impl<T: Message> Subscriber<T> {
+impl<T: Message> IpcSubscriber<T> {
     /// The newest unread sample, if any; older unread ones are discarded. Copied out of shared
     /// memory: if it came from another process, validate it before use.
     pub fn latest(&self) -> Result<Option<T>, IpcError> {
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn latest_gives_newest_to_every_subscriber() {
         let ns = ns("latest");
-        let node = Node::new(&ns, "test").unwrap();
+        let node = IpcNode::new(&ns, "test").unwrap();
         let publisher = node.publisher(&LATEST).unwrap();
         let a = node.subscriber(&LATEST).unwrap();
         let b = node.subscriber(&LATEST).unwrap();
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn late_subscriber_gets_last_value() {
         let ns = ns("history");
-        let node = Node::new(&ns, "test").unwrap();
+        let node = IpcNode::new(&ns, "test").unwrap();
         let publisher = node.publisher(&LATEST).unwrap();
         publisher.publish(&Counter { n: 7 }).unwrap();
         let late = node.subscriber(&LATEST).unwrap();
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn queue_keeps_order_and_drops_oldest_when_full() {
         let ns = ns("queue");
-        let node = Node::new(&ns, "test").unwrap();
+        let node = IpcNode::new(&ns, "test").unwrap();
         let publisher = node.publisher(&QUEUE).unwrap();
         let sub = node.subscriber(&QUEUE).unwrap();
         for n in 1..=6 {
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn only_one_publisher_per_topic() {
         let ns = ns("single");
-        let node = Node::new(&ns, "test").unwrap();
+        let node = IpcNode::new(&ns, "test").unwrap();
         let _first = node.publisher(&LATEST).unwrap();
         assert!(matches!(
             node.publisher(&LATEST),

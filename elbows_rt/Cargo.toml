@@ -13,6 +13,7 @@ rt-core = { path = "crates/rt-core" }
 rt-ipc = { path = "crates/rt-ipc" }
 rt-devices = { path = "crates/rt-devices" }
 rt-net = { path = "crates/rt-net" }
+rt-node = { path = "crates/rt-node" }
 bytemuck = { version = "1.16", features = ["derive", "min_const_generics"] }
 iceoryx2 = "0.10.1"
 iceoryx2-bb-derive-macros = "0.10.1"

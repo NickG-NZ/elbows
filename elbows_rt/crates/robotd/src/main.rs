@@ -3,11 +3,11 @@
 //! Two threads:
 //! - **RT thread**: the control loop. Talks to policies through local topics (`rt_core::topics`,
 //!   namespaced by robot name) and to the supervisor in-process. Starts **disabled**.
-//! - **Supervisor** (the main thread): robotd's only external interface. Commands and sessions
-//!   over Zenoh (`rt-net`), the bridge for remote policies and viewers, health.
+//! - **Supervisor** (the main thread): robotd's only external interface. Services and node
+//!   presence over Zenoh (`rt-node`), the bridge for remote policies and viewers, health.
 //!
 //! Local topics: `<robot>/plan` (policy → RT), `<robot>/state` (RT → anyone, every cycle),
-//! `<robot>/status` (RT → anyone, ~10 Hz). Zenoh keys: see `rt-net`.
+//! `<robot>/status` (RT → anyone, ~10 Hz). Zenoh keys: see `rt_net::keys`.
 //!
 //! Usage: `robotd --robot so101 [--setup hardware/setups/so101] [--rate-hz 200]`, then
 //! `robotctl --robot so101 enable`.
@@ -20,6 +20,7 @@ mod supervisor;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
@@ -27,7 +28,7 @@ use std::sync::mpsc::sync_channel;
 use rt_core::msgs::DOF;
 use rt_core::rt::{RT_STACK_BYTES, setup_current_thread};
 use rt_core::trigger::ClockTrigger;
-use rt_net::NetConfig;
+use rt_node::{Link, Node};
 
 use crate::bridge::Bridge;
 use crate::config::Config;
@@ -171,21 +172,18 @@ fn run() -> Result<(), String> {
     }
 
     // The supervisor, on this thread.
-    let net_cfg = NetConfig {
-        listen: cfg.net.listen.clone(),
-        connect: Vec::new(),
-    };
-    let supervisor = rt_net::open(&net_cfg)
+    let supervisor = Node::new(&args.robot, "robotd", Link::Local)
+        .map(|node| Rc::new(node.listen(&cfg.net.listen)))
         .map_err(|e| e.to_string())
-        .and_then(|net| {
+        .and_then(|node| {
             let rt = RtLink {
                 commands: commands_tx,
                 outcomes: outcomes_rx,
                 status: status_rx,
                 heartbeat,
             };
-            let bridge = Bridge::from_names(&args.robot, &net, &cfg.net.out, &cfg.net.inbound)?;
-            Supervisor::new(&args.robot, rt, net, bridge)
+            let bridge = Bridge::from_names(node.clone(), &cfg.net.out, &cfg.net.inbound)?;
+            Supervisor::new(node, rt, bridge)
         });
     let mut supervisor = match supervisor {
         Ok(s) => s,

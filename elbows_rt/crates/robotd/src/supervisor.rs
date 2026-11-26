@@ -1,9 +1,9 @@
 //! The supervisor: robotd's non-RT control side and its only external interface. One thread. Its
-//! loop waits briefly for service requests, then handles status, sessions, the bridge and health.
+//! loop waits briefly for service requests, then handles status, nodes, the bridge and health.
 //!
 //! - **Services** (`rt_core::services`) are served by handlers registered below, over Zenoh. Mode
 //!   commands go to the RT thread in-process; it decides, and its verdict is the reply.
-//! - **Sessions**: Zenoh liveliness tokens under `elbows/<robot>/session/**`.
+//! - **Nodes**: which nodes are on the network (`rt_node`), for `robotctl status`.
 //! - **Bridge**: whichever topics the setup file names (see [`Bridge`]).
 //!
 //! The RT thread never touches Zenoh: the supervisor requests, the RT thread decides.
@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 
 use rt_core::msgs::{Mode, Status};
 use rt_core::services::{self, Reply, StatusReport};
-use rt_net::{Server, Session};
-use zenoh::Wait;
-use zenoh::handlers::FifoChannelHandler;
-use zenoh::sample::{Sample, SampleKind};
+use std::rc::Rc;
+
+use rt_node::Node;
+use rt_node::{NodeWatch, Server};
 
 use crate::bridge::Bridge;
 use crate::controller::ModeCommand;
@@ -44,7 +44,7 @@ pub struct RtLink {
 pub struct Core {
     rt: RtLink,
     status: Option<Status>,
-    sessions: BTreeSet<String>,
+    nodes: BTreeSet<String>,
     next_command_id: u64,
     stalled: bool,
 }
@@ -52,46 +52,45 @@ pub struct Core {
 pub struct Supervisor {
     core: Core,
     server: Server<Core>,
-    session_events: zenoh::pubsub::Subscriber<FifoChannelHandler<Sample>>,
+    nodes: NodeWatch,
     bridge: Bridge,
-    _net: Session,
+    _node: Rc<Node>,
 }
 
 impl Supervisor {
-    pub fn new(robot: &str, rt: RtLink, net: Session, bridge: Bridge) -> Result<Self, String> {
-        let mut server = Server::new(&net, robot).map_err(|e| e.to_string())?;
+    /// `node` is robotd's network-facing node (local, listening); `bridge` routes through it.
+    pub fn new(node: Rc<Node>, rt: RtLink, bridge: Bridge) -> Result<Self, String> {
+        let mut server = node.server().map_err(|e| e.to_string())?;
+        let claim = |e: rt_node::NetError| format!("{e} (is another robotd running?)");
         server
             .handle(&services::STATUS, |c: &mut Core, ()| {
                 c.reply(true, String::new())
             })
-            .handle(&services::ENABLE, |c: &mut Core, ()| {
-                c.forward("enable", ModeCommand::Enable)
-            })
-            .handle(&services::HOLD, |c: &mut Core, ()| {
-                c.forward("hold", ModeCommand::Hold)
-            })
-            .handle(&services::STOP, |c: &mut Core, ()| {
-                c.forward("stop", ModeCommand::Stop)
-            });
-        let session_events = net
-            .liveliness()
-            .declare_subscriber(rt_net::sessions_wildcard(robot))
-            .history(true)
-            .wait()
-            .map_err(|e| format!("watch sessions: {e}"))?;
+            .map_err(claim)?;
+        for (service, cmd) in [
+            (&services::ENABLE, ModeCommand::Enable),
+            (&services::HOLD, ModeCommand::Hold),
+            (&services::STOP, ModeCommand::Stop),
+        ] {
+            let name = service.name;
+            server
+                .handle(service, move |c: &mut Core, ()| c.forward(name, cmd))
+                .map_err(claim)?;
+        }
+        let nodes = node.watch_nodes().map_err(|e| e.to_string())?;
         let core = Core {
             rt,
             status: None,
-            sessions: BTreeSet::new(),
+            nodes: BTreeSet::new(),
             next_command_id: 0,
             stalled: false,
         };
         Ok(Self {
             core,
             server,
-            session_events,
+            nodes,
             bridge,
-            _net: net,
+            _node: node,
         })
     }
 
@@ -107,7 +106,7 @@ impl Supervisor {
             if let Some(status) = self.core.rt.status.try_iter().last() {
                 self.core.status = Some(status);
             }
-            self.track_sessions();
+            self.track_nodes();
             self.bridge.step();
 
             if last_health.elapsed() >= HEALTH_PERIOD {
@@ -131,20 +130,16 @@ impl Supervisor {
         }
     }
 
-    fn track_sessions(&mut self) {
-        while let Ok(Some(sample)) = self.session_events.try_recv() {
-            let name = rt_net::session_name(sample.key_expr().as_str()).to_string();
-            let changed = match sample.kind() {
-                SampleKind::Put => self.core.sessions.insert(name.clone()),
-                SampleKind::Delete => self.core.sessions.remove(&name),
+    fn track_nodes(&mut self) {
+        for event in self.nodes.drain() {
+            let changed = if event.alive {
+                self.core.nodes.insert(event.label.clone())
+            } else {
+                self.core.nodes.remove(&event.label)
             };
             if changed {
-                let what = if sample.kind() == SampleKind::Put {
-                    "connected"
-                } else {
-                    "gone"
-                };
-                eprintln!("robotd: session {name} {what}");
+                let what = if event.alive { "connected" } else { "gone" };
+                eprintln!("robotd: node {} {what}", event.label);
             }
         }
     }
@@ -196,11 +191,11 @@ impl Core {
     }
 
     fn status_report(&self) -> StatusReport {
-        let sessions = self.sessions.iter().cloned().collect();
+        let nodes = self.nodes.iter().cloned().collect();
         let Some(s) = &self.status else {
             return StatusReport {
                 mode: "starting".into(),
-                sessions,
+                nodes,
                 ..Default::default()
             };
         };
@@ -215,14 +210,14 @@ impl Core {
             latency_p99_us: s.stats.latency.quantile_us(0.99),
             latency_max_us: s.stats.latency.max_ns / 1000,
             exec_p99_us: s.stats.exec.quantile_us(0.99),
-            sessions,
+            nodes,
         }
     }
 
     fn report(&self) {
         let r = self.status_report();
         eprintln!(
-            "robotd: {:<8} plan {:<5} rejected {:<3} | cycles {} missed {} | latency p99 <{}µs max {}µs | exec p99 <{}µs | sessions {}",
+            "robotd: {:<8} plan {:<5} rejected {:<3} | cycles {} missed {} | latency p99 <{}µs max {}µs | exec p99 <{}µs | nodes {}",
             r.mode,
             r.plan_seq,
             r.plans_rejected,
@@ -231,7 +226,7 @@ impl Core {
             r.latency_p99_us,
             r.latency_max_us,
             r.exec_p99_us,
-            r.sessions.len(),
+            r.nodes.len(),
         );
     }
 }

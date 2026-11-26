@@ -1,6 +1,8 @@
 //! A stand-in policy process: reads robotd's state, sends 1 s sine-wave plans at 10 Hz.
 //! Exercises the full path (topics, validation, sampling, hold) without a model.
 //!
+//! The same code either way: only the node's `Link` differs.
+//!
 //! Usage:
 //! - `plan-demo --robot so101` — a local policy, over iceoryx2 shared memory.
 //! - `plan-demo --robot so101 --remote [ENDPOINT]` — a remote policy, over Zenoh, as one on another
@@ -17,7 +19,7 @@ use std::time::{Duration, Instant};
 use bytemuck::Zeroable;
 use rt_core::msgs::{ArmState, DOF, Mode, N_MAX, Plan};
 use rt_core::topics::{PLAN, STATE};
-use rt_net::{NetConfig, NetPublisher, NetSubscriber};
+use rt_node::{Link, Node};
 
 const PLAN_HZ: f64 = 10.0;
 const DT_NS: u64 = 20_000_000;
@@ -27,59 +29,6 @@ const SINE_HZ: f64 = 0.5;
 const RAMP_S: f64 = 2.0;
 /// Don't plan from robot state older than this (robotd not running).
 const MAX_STATE_AGE: Duration = Duration::from_millis(200);
-
-/// How plans go out and state comes in.
-enum Link {
-    Local {
-        plans: rt_ipc::Publisher<Plan>,
-        states: rt_ipc::Subscriber<ArmState>,
-        _node: rt_ipc::Node,
-    },
-    Remote {
-        plans: NetPublisher<Plan>,
-        states: NetSubscriber<ArmState>,
-        _token: zenoh::liveliness::LivelinessToken,
-        _session: rt_net::Session,
-    },
-}
-
-impl Link {
-    fn local(robot: &str) -> Result<Self, String> {
-        let node = rt_ipc::Node::new(robot, "plan-demo").map_err(|e| e.to_string())?;
-        Ok(Link::Local {
-            plans: node.publisher(&PLAN).map_err(|e| {
-                format!("{e} (another policy, local or remote, already publishes {robot}/plan)")
-            })?,
-            states: node.subscriber(&STATE).map_err(|e| e.to_string())?,
-            _node: node,
-        })
-    }
-
-    fn remote(robot: &str, endpoint: &str) -> Result<Self, String> {
-        let session = rt_net::open(&NetConfig::client(endpoint)).map_err(|e| e.to_string())?;
-        Ok(Link::Remote {
-            plans: NetPublisher::new(&session, robot, &PLAN).map_err(|e| e.to_string())?,
-            states: NetSubscriber::new(&session, robot, &STATE).map_err(|e| e.to_string())?,
-            _token: rt_net::declare_session(&session, robot, "policy")
-                .map_err(|e| e.to_string())?,
-            _session: session,
-        })
-    }
-
-    fn latest_state(&self) -> Option<ArmState> {
-        match self {
-            Link::Local { states, .. } => states.latest().ok().flatten(),
-            Link::Remote { states, .. } => states.latest(),
-        }
-    }
-
-    fn publish(&self, plan: &Plan) {
-        let _ = match self {
-            Link::Local { plans, .. } => plans.publish(plan).map_err(|e| e.to_string()),
-            Link::Remote { plans, .. } => plans.publish(plan).map_err(|e| e.to_string()),
-        };
-    }
-}
 
 fn main() -> Result<(), String> {
     let usage = "usage: plan-demo --robot NAME [--remote [ENDPOINT]] [--amp RAD]";
@@ -104,17 +53,19 @@ fn main() -> Result<(), String> {
                     remote = Some(ep.clone());
                     i += 1;
                 }
-                None => remote = Some(rt_net::DEFAULT_ENDPOINT.to_string()),
+                None => remote = Some(rt_node::DEFAULT_ENDPOINT.to_string()),
             },
             _ => return Err(usage.into()),
         }
         i += 1;
     }
     let robot = robot.ok_or(usage)?;
-    let link = match &remote {
-        None => Link::local(&robot)?,
-        Some(ep) => Link::remote(&robot, ep)?,
-    };
+    let link = remote.clone().map_or(Link::Local, Link::Remote);
+    let node = Node::new(&robot, "policy", link).map_err(|e| e.to_string())?;
+    let plans = node.publisher(&PLAN).map_err(|e| {
+        format!("{e} (another policy, local or remote, already publishes {robot}/plan)")
+    })?;
+    let states = node.subscriber(&STATE).map_err(|e| e.to_string())?;
     eprintln!(
         "plan-demo: {} policy for {robot}",
         if remote.is_some() { "remote" } else { "local" }
@@ -126,7 +77,7 @@ fn main() -> Result<(), String> {
     let mut last_print = Instant::now() - Duration::from_secs(2);
     loop {
         std::thread::sleep(Duration::from_secs_f64(1.0 / PLAN_HZ));
-        if let Some(s) = link.latest_state() {
+        if let Ok(Some(s)) = states.latest() {
             last = Some((s, Instant::now()));
         }
         let Some((state, received)) = last.filter(|(_, at)| at.elapsed() < MAX_STATE_AGE) else {
@@ -147,7 +98,7 @@ fn main() -> Result<(), String> {
                 *qj = (scale * (TAU * SINE_HZ * t + j as f64).sin()) as f32;
             }
         }
-        link.publish(&plan);
+        let _ = plans.publish(&plan);
 
         if last_print.elapsed() >= Duration::from_secs(1) {
             let mode = Mode::from_u32(state.mode).map_or("?", Mode::name);

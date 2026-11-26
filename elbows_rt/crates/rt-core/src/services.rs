@@ -46,8 +46,8 @@ pub struct StatusReport {
     pub latency_p99_us: u64,
     pub latency_max_us: u64,
     pub exec_p99_us: u64,
-    /// Connected clients, as `<role>/<id>`.
-    pub sessions: Vec<String>,
+    /// Nodes on the network, as `<name>/<id>` (local nodes that only use topics don't appear).
+    pub nodes: Vec<String>,
 }
 
 pub const STATUS: Service<(), Reply> = Service::new("status");

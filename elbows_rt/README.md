@@ -5,10 +5,11 @@ Real-time robot runtime in Rust. Design: [`docs/middleware.md`](../docs/middlewa
 | Crate | What |
 |---|---|
 | `rt-core` | Messages and topic declarations, monotonic time, `ClockTrigger`, RT thread setup, cycle stats |
-| `rt-ipc` | Typed topics over iceoryx2 (zero-copy shared-memory pub/sub) |
+| `rt-node` | `Node`: the API every process uses for topics and services, on the robot (`Link::Local`) or off it (`Link::Remote`) |
+| `rt-ipc` | Backend: topics over iceoryx2 (zero-copy shared-memory pub/sub) |
 | `rt-devices` | Setup files, serial-port discovery, `CyclicDevice`/`StreamDevice`/`Transport` traits. No drivers yet |
 | `robotd` | The robot process: supervisor + RT loop. `plan-demo` is a stand-in policy |
-| `rt-net` | Zenoh: robotd commands, client sessions, topics that leave the host |
+| `rt-net` | Backend: Zenoh services, node presence, topics that leave the host |
 | `robotctl` | Operator CLI: `status`/`enable`/`hold`/`stop` over Zenoh; `devices list`/`port` |
 
 ```bash
@@ -19,7 +20,7 @@ cargo build --release
 ./target/release/robotctl --robot so101 enable            # → hold
 ./target/release/plan-demo --robot so101                  # terminal 2: local policy → running
 ./target/release/plan-demo --robot so101 --remote         # or: a remote policy over Zenoh
-./target/release/robotctl --robot so101 status            # mode, plans, timing, sessions
+./target/release/robotctl --robot so101 status            # mode, plans, timing, nodes
 ./target/release/robotctl --robot so101 stop              # → disabled
 ```
 
