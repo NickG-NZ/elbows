@@ -268,6 +268,11 @@ in our code.
   different layout is refused, not misread; a test snapshots every message's layout so a change
   forces a version bump. Services use `Json` (readable; easy from Python and the shell). A topic
   that must reach clients in other languages can switch to a schema codec (protobuf) on its own.
+- **Nothing blocks Zenoh.** Each subscriber has a ring buffer sized by the topic's pattern (1 for
+  `Latest`, `depth` for `Queue`) that drops its oldest when full, as iceoryx2 does. A subscriber that
+  stops reading loses messages; it never stalls the session. Node presence events and pending
+  service requests are bounded the same way. Unlike iceoryx2, a late subscriber doesn't yet get the
+  last value, and one publisher per topic isn't enforced over Zenoh.
 - **The bridge** (in robotd's supervisor) is a list of generic routes. The setup file picks the
   topics: `[robotd.net] out = ["state", "status"]`, `in = ["plan"]` (the defaults); unknown names
   or a topic in both lists are refused at startup. Local topics have one publisher, so an inbound

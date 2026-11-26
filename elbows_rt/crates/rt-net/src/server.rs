@@ -7,7 +7,7 @@
 //! its owner exits or crashes, so a restarted owner can claim it again.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::time::Duration;
 
 use rt_core::services::Service;
@@ -20,6 +20,10 @@ use zenoh::{Session, Wait};
 use crate::codec::{Codec, Json};
 use crate::keys::service_key;
 use crate::{NetError, zerr};
+
+// Requests waiting to be served. Beyond this, new ones are dropped (the caller gets no reply) rather
+/// than queueing without bound while the owner isn't polling.
+pub const PENDING: usize = 64;
 
 /// How long registering waits to hear about an existing owner.
 const CLAIM_TIMEOUT: Duration = Duration::from_millis(500);
@@ -38,14 +42,14 @@ pub struct Server<Ctx> {
     session: Session,
     robot: String,
     requests: Receiver<(&'static str, Query)>,
-    sender: Sender<(&'static str, Query)>,
+    sender: SyncSender<(&'static str, Query)>,
     handlers: HashMap<&'static str, Handler<Ctx>>,
     claims: Vec<Claim>,
 }
 
 impl<Ctx> Server<Ctx> {
     pub fn new(session: &Session, robot: &str) -> Self {
-        let (sender, requests) = channel();
+        let (sender, requests) = sync_channel(PENDING);
         Self {
             session: session.clone(),
             robot: robot.to_string(),
@@ -77,7 +81,8 @@ impl<Ctx> Server<Ctx> {
             .declare_queryable(&key)
             .complete(true)
             .callback(move |query| {
-                let _ = sender.send((name, query)); // only fails once the server is gone
+                // Never blocks Zenoh: if full (or the server is gone), the query is dropped unanswered.
+                let _ = sender.try_send((name, query));
             })
             .wait()
             .map_err(zerr)?;
@@ -185,8 +190,11 @@ mod tests {
             drop(server_session);
         });
         // the client may need a moment to connect
-        let first = (0..50)
-            .find_map(|_| call(&client, "t", &ENABLE, &()).ok())
+        let first = (0..100)
+            .find_map(|_| {
+                std::thread::sleep(Duration::from_millis(20));
+                call(&client, "t", &ENABLE, &()).ok()
+            })
             .unwrap();
         assert_eq!(first.message, "call 1");
         assert!(

@@ -1,7 +1,7 @@
 //! Which nodes are on the network: each announces itself with a liveliness token, which Zenoh
 //! withdraws when the node exits, crashes or loses its connection.
 
-use zenoh::handlers::FifoChannelHandler;
+use zenoh::handlers::{RingChannel, RingChannelHandler};
 use zenoh::liveliness::LivelinessToken;
 use zenoh::sample::{Sample, SampleKind};
 use zenoh::{Session, Wait};
@@ -23,9 +23,13 @@ pub struct NodeEvent {
     pub alive: bool,
 }
 
+/// Events buffered between [`NodeWatch::drain`] calls. Beyond this the oldest are dropped rather
+/// than stalling Zenoh; drain at least every few hundred events' worth of churn.
+pub const EVENTS: usize = 1024;
+
 /// Watches the robot's nodes. The first events are the nodes already present.
 pub struct NodeWatch {
-    subscriber: zenoh::pubsub::Subscriber<FifoChannelHandler<Sample>>,
+    subscriber: zenoh::pubsub::Subscriber<RingChannelHandler<Sample>>,
 }
 
 impl NodeWatch {
@@ -34,6 +38,7 @@ impl NodeWatch {
             .liveliness()
             .declare_subscriber(nodes_wildcard(robot))
             .history(true)
+            .with(RingChannel::new(EVENTS))
             .wait()
             .map_err(zerr)?;
         Ok(Self { subscriber })
